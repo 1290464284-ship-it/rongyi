@@ -27,11 +27,9 @@ export async function createPrescription(
   } catch (error) {
     // 主记录已创建但明细中途失败：清理孤儿记录（清理失败仅告警，不掩盖原始错误）
     if (prescriptionId) {
-      try {
-        await cleanupOrphanPrescription(prescriptionId, createdItemIds, showToast);
-      } catch {
-        showToast?.('清理孤儿处方失败，请检查未完成数据', 'error');
-      }
+      // cleanupOrphanPrescription 内部已对每次 DELETE 分别 try/catch（失败仅告警），
+      // 函数本身不会 reject，此处的 catch 兜底不可达。
+      await cleanupOrphanPrescription(prescriptionId, createdItemIds, showToast);
     }
     throw error;
   }

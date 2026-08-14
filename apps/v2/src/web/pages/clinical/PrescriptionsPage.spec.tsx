@@ -670,4 +670,31 @@ describe('PrescriptionsPage', () => {
       expect(screen.queryByText('charge-1')).toBeNull();
     });
   });
+
+  it('closes the status dialog through the dialog backdrop', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/prescriptions?page=1&pageSize=50') {
+        return {
+          items: [{
+            id: 'pres-1', patientId: 'p-1', patientIdLabel: '患者甲', doctorId: 'd-1', doctorIdLabel: '张医生',
+            remark: '饭后服用', status: 'PROCESSED', processedAt: '2026-08-06T02:00:00.000Z',
+            chargeId: 'charge-1', chargeIdLabel: 'CHG-1001', dispenseId: 'disp-1',
+          }],
+          total: 1, page: 1, pageSize: 50,
+        };
+      }
+      if (path === '/prescriptions/pres-1/status') {
+        return { id: 'pres-1', status: 'PROCESSED', processedAt: '2026-08-06T02:00:00.000Z', chargeId: 'charge-1', dispenseId: 'disp-1' };
+      }
+      return {};
+    });
+    render(<PrescriptionsPage />, { wrapper });
+    await screen.findByText('饭后服用');
+    fireEvent.click(screen.getByRole('button', { name: '查看状态' }));
+    expect(await screen.findByText('charge-1')).toBeDefined();
+    fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    await waitFor(() => {
+      expect(screen.queryByText('charge-1')).toBeNull();
+    });
+  });
 });

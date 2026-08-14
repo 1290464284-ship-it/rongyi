@@ -98,6 +98,32 @@ describe('DispenseEditDialog', () => {
     expect(await screen.findByText('发药单已更新')).toBeDefined();
   });
 
+  it('changes the patient and submits the updated dispense', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/dispenses/d-1') return detail;
+      if (path === '/resources/patients?page=1&pageSize=100') {
+        return { items: [{ id: 'p-1', name: '患者甲' }, { id: 'p-2', name: '患者乙' }], total: 2, page: 1, pageSize: 100 };
+      }
+      if (path === '/resources/inventoryItems?page=1&pageSize=100') {
+        return { items: [{ id: 'item-1', name: '药品甲', batchManaged: 1 }], total: 1, page: 1, pageSize: 100 };
+      }
+      return {};
+    });
+    render(<DispenseEditDialog dispenseId="d-1" onClose={vi.fn()} onDone={vi.fn()} />, { wrapper });
+    await waitFor(() => {
+      expect((screen.getByLabelText('编辑患者') as HTMLSelectElement).options.length).toBeGreaterThan(2);
+    });
+    fireEvent.change(screen.getByLabelText('编辑患者'), { target: { value: 'p-2' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存修改' }));
+    await waitFor(() => {
+      const patchCall = vi.mocked(apiRequest).mock.calls.find(
+        ([path, options]) => path === '/dispenses/d-1' && (options as RequestInit)?.method === 'PATCH',
+      );
+      expect(patchCall).toBeDefined();
+      expect(JSON.parse(String((patchCall?.[1] as RequestInit)?.body)).patientId).toBe('p-2');
+    });
+  });
+
   it('drops invalid quantities and warns before submitting', async () => {
     mockData({
       ...detail,

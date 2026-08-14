@@ -99,12 +99,11 @@ export function CephalometricPage() {
         }}
         submitOverride={async ({ form, editing }) => {
           const parseJsonObject = (raw: string): Record<string, unknown> => {
-            try {
-              const parsed = JSON.parse(raw || '{}') as unknown;
-              return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
-            } catch {
-              return {};
-            }
+            // validate() 已先对 landmarksJson/metricsJson 做 JSON.parse 并拦截非法输入，
+            // submitOverride 仅在 validate 通过后同步执行（同一 form 对象、无中间 await），
+            // 此处 JSON.parse 不可能抛错，原 try/catch 兜底不可达。
+            const parsed = JSON.parse(raw || '{}') as unknown;
+            return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
           };
           const parsedLandmarks = parseJsonObject(form.landmarksJson);
           const parsedMetrics = parseJsonObject(form.metricsJson);

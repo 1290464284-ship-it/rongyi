@@ -277,6 +277,26 @@ describe('DispenseCreateForm', () => {
     expect(onCreated).toHaveBeenCalled();
   });
 
+  it('captures the dispense note in the create payload', async () => {
+    mockApi();
+    render(<DispenseCreateForm onCreated={vi.fn()} />, { wrapper });
+    await waitFor(() => {
+      expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+    });
+    fireEvent.change(screen.getByLabelText('患者'), { target: { value: 'patient-1' } });
+    fireEvent.change(screen.getByLabelText('单号'), { target: { value: 'DISP-105' } });
+    fireEvent.change(screen.getByLabelText('发药备注'), { target: { value: '加急发药' } });
+    fireEvent.change(screen.getByLabelText('物品'), { target: { value: 'item-1' } });
+    fireEvent.change(screen.getByLabelText('发药数量'), { target: { value: '1' } });
+    fireEvent.click(screen.getByRole('button', { name: '创建发药单' }));
+
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/dispenses', expect.objectContaining({ method: 'POST' }));
+    });
+    const createCall = vi.mocked(apiRequest).mock.calls.find((entry) => entry[0] === '/dispenses');
+    expect(JSON.parse(String((createCall?.[1] as RequestInit)?.body))).toMatchObject({ note: '加急发药' });
+  });
+
   it('adds and removes detail rows', async () => {
     mockApi();
     render(<DispenseCreateForm onCreated={vi.fn()} />, { wrapper });

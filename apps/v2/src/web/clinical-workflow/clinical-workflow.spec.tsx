@@ -264,6 +264,26 @@ describe('RecordDialog', () => {
     const body = JSON.parse(String((call?.[1] as RequestInit)?.body)) as Record<string, unknown>;
     expect(body.visitId).toBe('v-9');
   });
+
+  it('submits the selected record status', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/doctors') return [{ id: 'd-1', name: '张医生' }];
+      if (path === '/resources/medicalRecords') return { id: 'mr-1' };
+      return {};
+    });
+    render(<RecordDialog row={row} onClose={vi.fn()} onSaved={vi.fn()} />, { wrapper });
+    await waitFor(() => {
+      expect((screen.getByRole('option', { name: '张医生' }) as HTMLOptionElement).value).toBe('d-1');
+    });
+    fireEvent.change(screen.getByLabelText('医生'), { target: { value: 'd-1' } });
+    fireEvent.change(screen.getByLabelText('状态'), { target: { value: 'APPROVED' } });
+    fireEvent.click(screen.getByRole('button', { name: '提交病历' }));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/medicalRecords', expect.objectContaining({ method: 'POST' }));
+    });
+    const call = vi.mocked(apiRequest).mock.calls.find((entry) => entry[0] === '/resources/medicalRecords');
+    expect(JSON.parse(String((call?.[1] as RequestInit)?.body))).toMatchObject({ status: 'APPROVED' });
+  });
 });
 
 describe('CreateFollowUpDialog', () => {

@@ -48,4 +48,19 @@ describe('ChangeOwnPasswordForm', () => {
     });
     expect(apiRequest).not.toHaveBeenCalled();
   });
+
+  it('reports password change failures', async () => {
+    vi.mocked(apiRequest).mockRejectedValue(new Error(''));
+    const showToast = vi.fn();
+    render(<ChangeOwnPasswordForm showToast={showToast} />);
+    fireEvent.change(screen.getByLabelText('旧密码'), { target: { value: 'old' } });
+    fireEvent.change(screen.getByLabelText('新密码'), { target: { value: 'newpass' } });
+    fireEvent.change(screen.getByLabelText('确认新密码'), { target: { value: 'newpass' } });
+    const form = screen.getByLabelText('旧密码').closest('form') as HTMLFormElement;
+    fireEvent.submit(form);
+
+    await waitFor(() => {
+      expect(showToast).toHaveBeenCalledWith('修改密码失败', 'error');
+    });
+  });
 });

@@ -300,6 +300,22 @@ describe('Layout clinic switcher', () => {
     expect(screen.queryByRole('heading', { name: '新手引导' })).toBeNull();
   });
 
+  it('treats onboarding as incomplete when localStorage is unavailable', async () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('storage denied');
+    });
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/auth/navigation') return { permissions: ['dashboard'] };
+      if (path === '/auth/clinics') {
+        return { currentClinicId: 'clinic-1', clinics: [{ clinicId: 'clinic-1', name: 'Clinic 1' }] };
+      }
+      if (path === '/auth/me') return { name: '王丽', username: 'wangli' };
+      return {};
+    });
+    renderLayout();
+    expect(await screen.findByRole('heading', { name: '新手引导' })).toBeDefined();
+  });
+
   it('shows the sidebar backup state', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/auth/navigation') return { permissions: ['dashboard'], role: 'BOSS' };

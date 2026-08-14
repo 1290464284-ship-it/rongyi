@@ -193,4 +193,24 @@ describe('SchedulesPage', () => {
     expect(await screen.findByText('班次模板或员工列表加载失败，请重试')).toBeDefined();
     expect(screen.getByRole('button', { name: '重试' })).toBeDefined();
   });
+
+  it('retries the failed template and user queries on demand', async () => {
+    let templatesCalls = 0;
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/shift-templates') {
+        templatesCalls += 1;
+        if (templatesCalls === 1) throw new Error('templates failed');
+        return templates;
+      }
+      if (path === '/resources/users?page=1&pageSize=100') return users;
+      if (path.startsWith('/schedules/week?weekStart=')) return weekRows;
+      return {};
+    });
+    render(<SchedulesPage />, { wrapper });
+    fireEvent.click(await screen.findByRole('button', { name: '重试' }));
+    await waitFor(() => {
+      expect(screen.queryByText('班次模板或员工列表加载失败，请重试')).toBeNull();
+    });
+    expect((await screen.findAllByText('早班')).length).toBeGreaterThan(0);
+  });
 });

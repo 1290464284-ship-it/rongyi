@@ -61,4 +61,24 @@ describe('ProcessingSettleDialog', () => {
     });
     expect(apiRequest).not.toHaveBeenCalled();
   });
+
+  it('reports settle failures', async () => {
+    vi.mocked(apiRequest).mockRejectedValue(new Error(''));
+    const showToast = vi.fn();
+    render(
+      <ProcessingSettleDialog
+        target={{ id: 'proc-1', totalFee: 1000 } as ProcessingRow}
+        reload={vi.fn().mockResolvedValue(undefined)}
+        onSettled={vi.fn()}
+        onClose={vi.fn()}
+        showToast={showToast}
+      />,
+    );
+    const form = screen.getByRole('dialog').querySelector('form');
+    fireEvent.submit(form as HTMLFormElement);
+
+    await waitFor(() => {
+      expect(showToast).toHaveBeenCalledWith('结算失败', 'error');
+    });
+  });
 });

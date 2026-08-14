@@ -276,4 +276,25 @@ describe('TemplateSection', () => {
       expect(screen.queryByRole('button', { name: '保存中...' })).toBeNull();
     });
   });
+
+  it('toggles the enabled checkbox on the create form', async () => {
+    render(<TemplateSection templates={[]} reload={vi.fn()} />, { wrapper });
+    const enabled = await screen.findByLabelText('启用模板') as HTMLInputElement;
+    expect(enabled.checked).toBe(true);
+    fireEvent.click(enabled);
+    expect((screen.getByLabelText('启用模板') as HTMLInputElement).checked).toBe(false);
+  });
+
+  it('reports delete failures and closes the confirm dialog', async () => {
+    vi.mocked(apiRequest).mockRejectedValue('delete failed');
+    render(<TemplateSection templates={[templateFixture()]} reload={vi.fn()} />, { wrapper });
+    await screen.findByText('早班');
+    fireEvent.click(screen.getByRole('button', { name: '删除' }));
+    const dialog = await screen.findByRole('dialog', { name: '删除班次模板' });
+    fireEvent.click(within(dialog).getByRole('button', { name: '删除' }));
+    expect(await screen.findByText('删除模板失败')).toBeDefined();
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog')).toBeNull();
+    });
+  });
 });

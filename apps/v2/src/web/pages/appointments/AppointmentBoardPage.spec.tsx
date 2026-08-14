@@ -349,6 +349,10 @@ describe('AppointmentBoardPage', () => {
     render(<AppointmentBoardPage />, { wrapper });
     expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
     expect(screen.getByRole('button', { name: '重试' })).toBeDefined();
+
+    vi.mocked(apiRequest).mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 200 });
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    expect(await screen.findByRole('heading', { name: '预约看板' })).toBeDefined();
   });
 
   it('falls back to a generic message for non-Error board failures', async () => {

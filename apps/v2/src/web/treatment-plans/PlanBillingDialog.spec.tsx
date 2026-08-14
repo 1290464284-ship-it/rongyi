@@ -256,4 +256,26 @@ describe('PlanBillingDialog', () => {
     pending[2]?.();
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
   });
+
+  it('reports plan discount, item discount and billing failures', async () => {
+    mockItems();
+    render(<PlanBillingDialog plan={planFixture()} onClose={vi.fn()} onChanged={vi.fn()} />, { wrapper });
+    await screen.findByText('洁牙');
+
+    vi.mocked(apiRequest).mockRejectedValueOnce('plan discount failed');
+    fireEvent.change(screen.getByLabelText('整单折扣类型'), { target: { value: 'WHOLE' } });
+    fireEvent.change(screen.getByLabelText('整单折扣率'), { target: { value: '80' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存折扣' }));
+    expect(await screen.findByText('保存折扣失败')).toBeDefined();
+
+    vi.mocked(apiRequest).mockRejectedValueOnce('item discount failed');
+    fireEvent.change(screen.getByLabelText('明细折扣 洁牙'), { target: { value: '90' } });
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    expect(await screen.findByText('保存明细折扣失败')).toBeDefined();
+
+    vi.mocked(apiRequest).mockRejectedValueOnce('bill failed');
+    fireEvent.click(screen.getByRole('checkbox', { name: '勾选划价 洁牙' }));
+    fireEvent.click(screen.getByRole('button', { name: '划价' }));
+    expect(await screen.findByText('划价失败')).toBeDefined();
+  });
 });

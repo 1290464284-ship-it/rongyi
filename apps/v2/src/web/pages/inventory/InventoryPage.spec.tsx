@@ -451,6 +451,18 @@ describe('InventoryPage', () => {
     fireEvent.click(await screen.findByRole('tab', { name: '库存明细报表' }));
     expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
     expect(screen.getByRole('button', { name: '重试' })).toBeDefined();
+
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/inventoryItems?page=1&pageSize=20') return { items: [], total: 0 };
+      if (path === '/inventory/low-stock') return [];
+      if (path === '/inventory/expiring?days=30') return [];
+      if (path.startsWith('/inventory-reports/')) {
+        return { type: 'IN', from: null, to: null, total: 0, items: [], supplierId: null };
+      }
+      return {};
+    });
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    expect(await screen.findByText('暂无报表数据')).toBeDefined();
   });
 
   it('shows a raw non-error message on the report tab', async () => {

@@ -382,4 +382,29 @@ describe('ClinicalWorkflowPage', () => {
     const call = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/registrations/r-1/status');
     expect(JSON.parse(String(call?.[1]?.body))).toMatchObject({ status: 'COMPLETED' });
   });
+
+  it('pages the visit resource list server-side', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/workbench/today') return {};
+      if (path === '/resources/registrations?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/visits?page=1&pageSize=100') {
+        return { items: [{ id: 'v-1', status: 'IN_PROGRESS' }], total: 150, page: 1, pageSize: 100 };
+      }
+      if (path === '/resources/visits?page=2&pageSize=100') {
+        return { items: [{ id: 'v-2', status: 'IN_PROGRESS' }], total: 150, page: 2, pageSize: 100 };
+      }
+      if (path === '/resources/firstExams?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/treatments?page=1&pageSize=100') return { items: [], total: 0 };
+      return {};
+    });
+    render(<ClinicalWorkflowPage />, { wrapper });
+    expect(await screen.findByText('v-1')).toBeDefined();
+    const nextButtons = screen.getAllByRole('button', { name: '下一页' });
+    const enabledNext = nextButtons.find((button) => !(button as HTMLButtonElement).disabled);
+    expect(enabledNext).toBeDefined();
+    fireEvent.click(enabledNext!);
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/visits?page=2&pageSize=100');
+    });
+  });
 });

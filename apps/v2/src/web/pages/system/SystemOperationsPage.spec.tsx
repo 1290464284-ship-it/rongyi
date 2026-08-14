@@ -299,4 +299,14 @@ describe('SystemOperationsPage', () => {
     pending.forEach((resolve) => resolve());
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
   });
+
+  it('reports invalid import JSON before submitting', async () => {
+    render(<ToastProvider><SystemOperationsPage /></ToastProvider>);
+    fireEvent.change(document.querySelector('textarea') as HTMLTextAreaElement, {
+      target: { value: '{"a":1}' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: '导入' }));
+    expect(await screen.findByText('JSON 必须是行数组')).toBeDefined();
+    expect(apiRequest).not.toHaveBeenCalled();
+  });
 });

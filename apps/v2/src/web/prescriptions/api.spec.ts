@@ -40,6 +40,32 @@ describe('prescriptions/api', () => {
     expect(apiRequest).toHaveBeenCalledWith('/resources/prescriptions/pres-1', expect.objectContaining({ method: 'DELETE' }));
   });
 
+  it('warns when orphan cleanup deletes fail without masking the original error', async () => {
+    const showToast = vi.fn();
+    let itemPosts = 0;
+    vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
+      const method = String(init?.method ?? 'GET').toUpperCase();
+      if (method === 'POST' && path === '/resources/prescriptions') return { id: 'pres-1' };
+      if (method === 'POST' && path === '/resources/prescriptionItems') {
+        itemPosts += 1;
+        if (itemPosts === 1) return { id: 'item-1' };
+        throw new Error('detail failed');
+      }
+      if (method === 'DELETE') throw new Error('delete failed');
+      return {};
+    });
+    const form = {
+      ...validForm(),
+      items: [
+        { id: 'a', name: '阿莫西林', days: '3', quantity: '2', price: '100', remark: '' },
+        { id: 'b', name: '布洛芬', days: '3', quantity: '2', price: '100', remark: '' },
+      ],
+    };
+    await expect(createPrescription(form as never, showToast)).rejects.toThrow('detail failed');
+    expect(showToast).toHaveBeenCalledWith('删除处方明细 item-1 失败，请检查未完成数据', 'error');
+    expect(showToast).toHaveBeenCalledWith('删除孤儿处方 pres-1 失败，请检查未完成数据', 'error');
+  });
+
   it('rethrows a master creation failure without cleaning up', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
       if (path === '/resources/prescriptions' && String(init?.method ?? 'GET').toUpperCase() === 'POST') {

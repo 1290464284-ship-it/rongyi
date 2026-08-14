@@ -267,6 +267,8 @@ describe('FollowUpsPage', () => {
     expect(screen.getByText(/共 150 条/)).toBeDefined();
     fireEvent.click(screen.getByRole('button', { name: '下一页' }));
     expect(await screen.findByText('第二页患者')).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '上一页' }));
+    expect(await screen.findByText('截断患者')).toBeDefined();
   });
 
   it('cancels the completion dialog without changing state', async () => {

@@ -117,6 +117,32 @@ describe('CommunicationWorkflowPage', () => {
     });
   });
 
+  it('reports mark-sent and dismiss failures', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/wechat/status') return { configured: true, provider: 'http' };
+      if (path === '/wechat-reminders/today') {
+        return {
+          date: '2026-08-05',
+          config: { enabled: true, appointmentDaysBefore: 1, recallDaysAfter: 3, firstExamDaysAfter: 3 },
+          items: [
+            { id: 'r-1', patientName: '张三', patientPhone: '13800000000', scene: 'TREATMENT_RECALL', sceneLabel: '治疗后回访', content: '复诊提醒内容一' },
+            { id: 'r-2', patientName: '李四', patientPhone: '13900000000', scene: 'FIRST_EXAM_NUDGE', sceneLabel: '首诊跟进', content: '复诊提醒内容二' },
+          ],
+        };
+      }
+      if (path === '/resources/wechatMessages?page=1&pageSize=100') return { items: [], total: 0 };
+      throw 'boom';
+    });
+    render(<CommunicationWorkflowPage />, { wrapper });
+    await screen.findByText('张三');
+    fireEvent.click(screen.getAllByRole('button', { name: '已发微信' })[0]);
+    expect(await screen.findByText('操作失败')).toBeDefined();
+    fireEvent.click(screen.getAllByRole('button', { name: '忽略' })[1]);
+    await waitFor(() => {
+      expect(screen.getAllByText('操作失败').length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
   it('disables sending when the wechat channel is not configured', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/wechat/status') {

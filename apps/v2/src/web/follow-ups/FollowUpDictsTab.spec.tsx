@@ -115,6 +115,15 @@ describe('FollowUpDictsTab', () => {
     resolveList(Promise.reject(new Error('Load failed')));
     expect(await screen.findByText('网络请求失败，请重试')).toBeDefined();
     expect(screen.getByRole('button', { name: '重试' })).toBeDefined();
+
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/followUpDicts?page=1&pageSize=200') {
+        return { items: rows, total: 2, page: 1, pageSize: 200 };
+      }
+      return {};
+    });
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    expect(await screen.findByText('初诊类型')).toBeDefined();
   });
 
   it('renders sparse dictionary rows with blank fallbacks', async () => {

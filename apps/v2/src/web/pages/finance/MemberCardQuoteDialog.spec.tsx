@@ -51,4 +51,17 @@ describe('MemberCardQuoteDialog', () => {
 
     expect(await screen.findByText('该卡无折扣方案')).toBeDefined();
   });
+
+  it('reports quote failures', async () => {
+    vi.mocked(apiRequest).mockRejectedValue(new Error(''));
+    const showToast = vi.fn();
+    render(<MemberCardQuoteDialog open cardId="mc-1" onClose={vi.fn()} showToast={showToast} />);
+    fireEvent.change(screen.getByLabelText('原价金额（元）'), { target: { value: '100' } });
+    const form = screen.getByRole('dialog').querySelector('form');
+    fireEvent.submit(form as HTMLFormElement);
+
+    await waitFor(() => {
+      expect(showToast).toHaveBeenCalledWith('报价试算失败', 'error');
+    });
+  });
 });

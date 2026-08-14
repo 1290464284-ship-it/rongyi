@@ -371,6 +371,12 @@ describe('CephalometricPage', () => {
     });
     expect(await screen.findByRole('checkbox', { name: /c-51/ })).toBeDefined();
     expect(screen.getByText('上一页')).toBeDefined();
+
+    fireEvent.click(screen.getByText('上一页'));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/cephalometricCases?page=1&pageSize=50');
+    });
+    expect(await screen.findByRole('checkbox', { name: /c-1/ })).toBeDefined();
   });
 
   it('edits a cephalometric case keeping the original image', async () => {

@@ -19,7 +19,7 @@ export function MedicalRecordsPage() {
   const [editForm, setEditForm] = useState<EditRequestForm>(emptyEditForm);
   const [reviewNote, setReviewNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const reloadRef = useRef<() => Promise<unknown>>(async () => undefined);
+  const reloadRef = useRef<(() => Promise<unknown>) | null>(null);
   const staleRef = useRef(false);
 
   function openEditRequest(row: MedicalRecordRow) {
@@ -71,7 +71,7 @@ export function MedicalRecordsPage() {
       });
       showToast('修改申请已提交', 'success');
       setEditTarget(null);
-      await reloadRef.current();
+      await reloadRef.current?.();
     } catch (error) {
       showToast(errorMessage(error, '提交失败'), 'error');
     } finally {
@@ -91,7 +91,7 @@ export function MedicalRecordsPage() {
       showToast(approve ? '已通过修改申请' : '已驳回修改申请', 'success');
       setReviewTarget(null);
       setReviewNote('');
-      await reloadRef.current();
+      await reloadRef.current?.();
     } catch (error) {
       showToast(errorMessage(error, '审核失败'), 'error');
     } finally {

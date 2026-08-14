@@ -302,8 +302,12 @@ it('syncs the active tab when the URL drops its tab or gains a query', async () 
 });
 
 it('shows a navigation error state for boss-only hubs', async () => {
+  let fail = true;
   vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-    if (path === '/auth/navigation') throw new Error('nav failed');
+    if (path === '/auth/navigation') {
+      if (fail) throw new Error('nav failed');
+      return { role: 'BOSS' };
+    }
     return [];
   });
   const tabs: HubTab[] = [
@@ -311,5 +315,7 @@ it('shows a navigation error state for boss-only hubs', async () => {
   ];
   render(<ResourceHub title="Hub" tabs={tabs} />, { wrapper });
   expect(await screen.findByText('导航权限加载失败，无法确定可访问模块')).toBeDefined();
-  expect(screen.getByRole('button', { name: '重试' })).toBeDefined();
+  fail = false;
+  fireEvent.click(screen.getByRole('button', { name: '重试' }));
+  expect(await screen.findByText('Boss panel')).toBeDefined();
 });

@@ -123,6 +123,11 @@ describe('ErrorBoundary and simple states', () => {
   }
 
   it('catches child render errors', () => {
+    const reload = vi.fn();
+    Object.defineProperty(window, 'location', {
+      value: { ...window.location, reload },
+      writable: true,
+    });
     render(
       <ErrorBoundary>
         <Boom />
@@ -130,7 +135,8 @@ describe('ErrorBoundary and simple states', () => {
     );
     expect(screen.getByText('页面加载失败')).toBeDefined();
     expect(screen.getByText('网络请求失败，请重试')).toBeDefined();
-    expect(screen.getByRole('button', { name: '重新加载' })).toBeDefined();
+    fireEvent.click(screen.getByRole('button', { name: '重新加载' }));
+    expect(reload).toHaveBeenCalled();
   });
 
   it('renders children when there is no error', () => {

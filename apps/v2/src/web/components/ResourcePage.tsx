@@ -341,9 +341,7 @@ function ResourceCrudPage({ resource: fixedResource, initialSearch }: { resource
       if (firstError) showToast(friendlyError(firstError.reason), 'error');
       setSelectedIds(new Set(failedIds));
       setBatchDeleteOpen(failedIds.length > 0);
-      await listQuery.refetch().catch(() => {
-        showToast('删除后刷新列表失败', 'error');
-      });
+      await listQuery.refetch();
     } finally {
       batchBusyRef.current = false;
       setBatchBusy(false);

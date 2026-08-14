@@ -204,4 +204,25 @@ describe('LoginPage', () => {
     resolveSetup?.({ created: true });
     expect(await screen.findByText('工作台')).toBeDefined();
   });
+
+  it('falls back to empty credentials when localStorage reads throw', () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('privacy mode');
+    });
+    renderPage();
+    expect((screen.getByLabelText('用户名') as HTMLInputElement).value).toBe('');
+    expect((screen.getByRole('checkbox', { name: '记住我' }) as HTMLInputElement).checked).toBe(false);
+  });
+
+  it('shows a setup failure toast when creating the admin fails', async () => {
+    vi.mocked(apiRequest)
+      .mockResolvedValueOnce({ setupRequired: true })
+      .mockRejectedValueOnce('setup failed');
+    renderNavigablePage();
+    await screen.findByText('设置初始管理员');
+    fireEvent.change(screen.getByLabelText('新管理员密码'), { target: { value: 'first-run-123' } });
+    fireEvent.change(screen.getByLabelText('确认密码'), { target: { value: 'first-run-123' } });
+    fireEvent.click(screen.getByRole('button', { name: '创建管理员并登录' }));
+    expect(await screen.findByText('创建管理员失败')).toBeDefined();
+  });
 });

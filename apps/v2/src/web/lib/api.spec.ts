@@ -1224,4 +1224,36 @@ describe('api helper functions', () => {
     fetchMock.mockRejectedValue('network exploded');
     await expect(mod.apiRequest('/string-failure')).rejects.toThrow('操作失败，请稍后重试');
   });
+
+  it('clearSession deletes both token keys from the secret store', async () => {
+    const secrets = {
+      get: vi.fn().mockResolvedValue(null),
+      set: vi.fn().mockResolvedValue(true),
+      delete: vi.fn().mockResolvedValue(true),
+    };
+    (globalThis.window as unknown as { desktop: Record<string, unknown> }).desktop = {
+      getApiPort: vi.fn().mockResolvedValue(9999),
+      secrets,
+    };
+    await mod.setTokens('tok', 'refresh');
+    await expect(mod.logout()).resolves.toBeUndefined();
+    expect(secrets.delete).toHaveBeenCalledWith('v2.token');
+    expect(secrets.delete).toHaveBeenCalledWith('v2.refreshToken');
+  });
+
+  it('returns false from refresh when the refresh request throws', async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/warmup')) {
+        return new Response(JSON.stringify({ success: true, data: 'ok' }), { status: 200 });
+      }
+      if (url.endsWith('/auth/refresh')) {
+        throw new Error('network down');
+      }
+      return new Response(JSON.stringify({ success: false, message: 'Invalid or expired token' }), { status: 401 });
+    });
+    await mod.apiRequest('/warmup');
+    await mod.setTokens('expired', 'refresh-alive');
+    await expect(mod.apiRequest('/patients')).rejects.toThrow();
+  });
 });

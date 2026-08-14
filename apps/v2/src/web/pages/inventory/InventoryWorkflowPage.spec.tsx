@@ -705,4 +705,29 @@ describe('InventoryWorkflowPage', () => {
     expect(await screen.findByText('暂无待应用补货建议')).toBeDefined();
     expect(screen.queryByText(/补货建议超过/)).toBeNull();
   });
+
+  it('pages the replenishment suggestions server-side', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { items: [], total: 0 };
+      if (path === '/resources/processingOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') {
+        return { items: [{ id: 's-1', inventoryId: 'item-1', rop: 5, suggestedQty: 3, status: 'OPEN' }], total: 150, page: 1, pageSize: 100 };
+      }
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=2&pageSize=100') {
+        return { items: [{ id: 's-2', inventoryId: 'item-2', rop: 5, suggestedQty: 3, status: 'OPEN' }], total: 150, page: 2, pageSize: 100 };
+      }
+      if (path === '/stocktakes?page=1&pageSize=200') return { items: [], total: 0 };
+      return {};
+    });
+    render(<InventoryWorkflowPage />, { wrapper });
+    await screen.findByText('待应用');
+    const nextButtons = screen.getAllByRole('button', { name: '下一页' });
+    const enabledNext = nextButtons.find((button) => !(button as HTMLButtonElement).disabled);
+    expect(enabledNext).toBeDefined();
+    fireEvent.click(enabledNext!);
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/inventoryReplenishmentSuggestions?page=2&pageSize=100');
+    });
+  });
 });

@@ -297,6 +297,20 @@ describe('TreatmentsPage', () => {
     });
   });
 
+  it('reports status transition failures', async () => {
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === '/resources/treatments?page=1&pageSize=50') {
+        return { items: [{ id: 't-2', patientId: 'p-1', doctorId: 'd-1', name: '补牙', price: 10000, status: 'PLANNED' }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path === '/treatments/t-2/status') throw 'transition failed';
+      return {};
+    });
+    render(<TreatmentsPage />, { wrapper });
+    await screen.findByText('补牙');
+    fireEvent.change(screen.getByLabelText('变更治疗状态'), { target: { value: 'IN_PROGRESS' } });
+    expect(await screen.findByText('状态更新失败')).toBeDefined();
+  });
+
   it('joins array teeth numbers when editing and falls back to ids for unnamed doctors', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/resources/treatments?page=1&pageSize=50') {

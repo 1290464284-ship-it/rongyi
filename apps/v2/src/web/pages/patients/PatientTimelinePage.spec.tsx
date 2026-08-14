@@ -201,6 +201,27 @@ describe('PatientTimelinePage', () => {
     expect(await screen.findByText('该区块加载失败')).toBeDefined();
   });
 
+  it('retries a failed timeline block', async () => {
+    let fail = true;
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path.includes('/resources/visits?')) {
+        if (fail) throw new Error('visits failed');
+        return { items: [{ id: 'v1', startTime: '2026-08-04T09:00:00.000Z', summary: 'Visit OK', status: 'COMPLETED' }], total: 1, page: 1, pageSize: 50 };
+      }
+      if (path.includes('/resources/treatments?') || path.includes('/resources/charges?') || path.includes('/resources/followUps?')) {
+        return { items: [], total: 0, page: 1, pageSize: 50 };
+      }
+      if (path.includes('/custom-fields')) return [];
+      return { items: [{ id: 'patient-demo-001', name: 'Demo Patient' }], total: 1, page: 1, pageSize: 200 };
+    });
+    render(<PatientTimelinePage />, { wrapper });
+    expect(await screen.findByText('该区块加载失败')).toBeDefined();
+    fail = false;
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    expect(await screen.findByText('Visit OK')).toBeDefined();
+    expect(screen.queryByText('该区块加载失败')).toBeNull();
+  });
+
   it('saves custom field values', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string, options?: RequestInit) => {
       if (path.includes('/resources/visits?') || path.includes('/resources/treatments?')
