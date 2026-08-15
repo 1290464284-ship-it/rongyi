@@ -79,6 +79,12 @@ jobs:
         # data/simulated-clinic 被 gitignore：新检出为空，不生成则 permission smoke 静默跳过
         run: pnpm --filter @dental/v2 simulate:clinic-data
 
+      # A-P0.1 实测：windows-latest 干净 runner 上 smoke:all 的 ui-smoke
+      # 因 Playwright 浏览器缺失失败。V2 CI 的 smoke job 有同款安装步骤，
+      # 内部发布此前依赖缓存侥幸通过，必须显式安装。
+      - name: Install Playwright
+        run: pnpm --filter @dental/v2 exec playwright install chromium
+
       - name: Full smoke suite
         env:
           V2_ADMIN_PASSWORD: v2-internal-smoke-admin
