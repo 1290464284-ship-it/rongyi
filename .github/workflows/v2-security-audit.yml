@@ -35,9 +35,10 @@ jobs:
         run: pnpm audit --audit-level=high
 
       - name: osv-scanner lockfile scan
-        # B-1.4 首跑修复：npm 上不存在 osv-scanner 包（E404）。改用官方
-        # action 并 pin 到 v2.5.0 的完整 commit SHA。
-        uses: google/osv-scanner-action@8deb546fdb875b9996d27d4950be7312dac076a1 # v2.5.0
+        # B-1.4 二修：v2.5.0 的仓库根目录 action.yml 没有 runs 段，官方
+        # reusable workflow 实际引用的是子目录 action：
+        # google/osv-scanner-action/osv-scanner-action。同样 pin 完整 SHA。
+        uses: google/osv-scanner-action/osv-scanner-action@06b2ab4348248b456ee06c9e953637f55e03504f # v2.5.0
         with:
           scan-args: |-
             --lockfile=pnpm-lock.yaml
