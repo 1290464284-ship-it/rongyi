@@ -56,8 +56,14 @@ if (-not (Wait-Job $signatureJob -Timeout 120)) {
 }
 $signature = Receive-Job $signatureJob
 Remove-Job $signatureJob -Force -ErrorAction SilentlyContinue
-if ($signature.Status -ne "Valid") {
-  throw ("Installer signature is not Valid: " + $signature.Status + " " + $signature.StatusMessage)
+# 干净机上自签名根未导入系统库时，Get-AuthenticodeSignature 会返回
+# NotTrusted/UnknownError——这是预期状态，交给下方离线 CustomRootTrust
+# 链校验做最终判定；只拒绝「未签名」与「哈希不符」两类硬错误。
+if ($signature.Status -eq "NotSigned") {
+  throw "Installer is not signed"
+}
+if ($signature.Status -eq "HashMismatch") {
+  throw ("Installer signature hash mismatch: " + $signature.StatusMessage)
 }
 $signer = $signature.SignerCertificate
 if ($null -eq $signer) {
