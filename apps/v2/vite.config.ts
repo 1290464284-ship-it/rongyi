@@ -44,7 +44,11 @@ export default defineConfig({
   test: {
     // 重负载（数据库引导/加密备份/restore 全链路）在并行覆盖门禁下可能超过默认 5s；
     // 统一放宽到 20s，避免资源争抢造成的误报，同时仍能捕获真正的挂起。
-    testTimeout: 20_000,
+    // A-P0.1 实测：windows-latest 上 internal release 的 Verify 阶段多文件出现
+    // 20s testTimeout / 10s hookTimeout 误报（Ubuntu CI 无此现象）。再放宽一档，
+    // 仍远低于能掩盖真挂起的量级。
+    testTimeout: 40_000,
+    hookTimeout: 20_000,
     coverage: {
       provider: 'v8',
       reportsDirectory: 'coverage',
