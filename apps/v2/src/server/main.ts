@@ -403,6 +403,13 @@ const configuredAutoBackupInterval = Number(process.env.V2_AUTO_BACKUP_INTERVAL_
 const autoBackupIntervalMs = Number.isFinite(configuredAutoBackupInterval) && configuredAutoBackupInterval >= 60_000
   ? configuredAutoBackupInterval
   : DEFAULT_AUTO_BACKUP_INTERVAL_MS;
+// A-P2.4：恢复演练/soak 用 V2_AUTO_BACKUP_FIRST_DELAY_MS 加速首备份，
+// 默认保持 5 分钟。scheduler 侧会再次钳制到 ≥250ms。
+const DEFAULT_AUTO_BACKUP_FIRST_DELAY_MS = 5 * 60 * 1000;
+const configuredAutoBackupFirstDelay = Number(process.env.V2_AUTO_BACKUP_FIRST_DELAY_MS ?? DEFAULT_AUTO_BACKUP_FIRST_DELAY_MS);
+const autoBackupFirstDelayMs = Number.isFinite(configuredAutoBackupFirstDelay)
+  ? Math.max(250, Math.floor(configuredAutoBackupFirstDelay))
+  : DEFAULT_AUTO_BACKUP_FIRST_DELAY_MS;
 const configuredAutoBackupKeep = Number(process.env.V2_AUTO_BACKUP_KEEP ?? DEFAULT_AUTO_BACKUP_KEEP);
 const autoBackupKeep = Number.isFinite(configuredAutoBackupKeep)
   ? Math.min(365, Math.max(1, Math.floor(configuredAutoBackupKeep)))
@@ -434,6 +441,7 @@ const schedulers = startSchedulers({
   audit,
   autoBackupIntervalMs,
   autoBackupKeep,
+  autoBackupFirstDelayMs,
   backupMirrorDir,
   backupMirrorKeep,
   logger,
