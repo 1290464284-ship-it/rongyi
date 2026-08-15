@@ -35,7 +35,12 @@ jobs:
         run: pnpm audit --audit-level=high
 
       - name: osv-scanner lockfile scan
-        run: npm exec --yes osv-scanner -- --lockfile pnpm-lock.yaml
+        # B-1.4 首跑修复：npm 上不存在 osv-scanner 包（E404）。改用官方
+        # action 并 pin 到 v2.5.0 的完整 commit SHA。
+        uses: google/osv-scanner-action@8deb546fdb875b9996d27d4950be7312dac076a1 # v2.5.0
+        with:
+          scan-args: |-
+            --lockfile=pnpm-lock.yaml
 
       - name: Source security scan
         run: pnpm --filter @dental/v2 security:scan

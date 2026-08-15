@@ -33,6 +33,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # B-1.4 首跑修复：large-db-concurrency-smoke 直接以
+      # dist-electron/server.cjs 拉起 API，本 workflow 之前没有编译步骤，
+      # 首跑因文件缺失失败。
+      - name: Compile electron server bundle
+        run: pnpm --filter @dental/v2 electron:compile
+
       - name: Run shuffled tests twice without retries
         run: pnpm --filter @dental/v2 run test:flaky
         env:
