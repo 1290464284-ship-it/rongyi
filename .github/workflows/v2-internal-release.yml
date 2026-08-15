@@ -1,4 +1,4 @@
-name: V2 Internal Release
+﻿name: V2 Internal Release
 
 # Round7 H4：本 workflow 是手动内部发布通道（workflow_dispatch 专用），
 # 截至 Round7 审计从未在 Actions runner 上运行过（v2-internal-2.1.4 是早期
