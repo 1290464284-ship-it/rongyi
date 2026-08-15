@@ -39,8 +39,9 @@ if (-not (Test-Path -LiteralPath $InstallerPath)) {
   throw ("Installer not found: " + $InstallerPath)
 }
 
-$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2
-$cert.Import($certPath)
+# pwsh7/.NET8 下 X509Certificate2 不可变、无 Import()；构造函数加载
+# CER 在 Windows PowerShell 5.1 与 pwsh 7 下均可用。
+$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($certPath)
 Write-Step ("Certificate thumbprint: " + $cert.Thumbprint)
 
 # 1. 校验安装包 Authenticode 签名。包一层 Start-Job 兜底：若签名检查
