@@ -154,6 +154,30 @@ describe('startSchedulers', () => {
     expect(stopped).toBe(true);
   }, 15_000);
 
+  it('honors a custom auto-backup first delay for drills and soak (A-P2.4)', async () => {
+    vi.useFakeTimers();
+    ensureTimers();
+    const backups = makeBackups();
+    const audit = makeAudit();
+    const logger = makeLogger();
+    const { stop } = startSchedulers({
+      backups,
+      audit,
+      autoBackupIntervalMs: 24 * 60 * 60 * 1000,
+      autoBackupKeep: 30,
+      autoBackupFirstDelayMs: 1_500,
+      logger,
+      onAlertCreate: vi.fn(),
+    });
+
+    await vi.advanceTimersByTimeAsync(500);
+    expect(backups.create).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1_001);
+    await vi.waitFor(() => expect(backups.create).toHaveBeenCalledTimes(1));
+    stop();
+  }, 15_000);
+
   it('cleanupAuditLogs 异常时吞错仅记录日志', async () => {
     vi.useRealTimers();
     ensureTimers();
