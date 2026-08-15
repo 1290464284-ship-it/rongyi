@@ -85,6 +85,11 @@ jobs:
       - name: Install Playwright
         run: pnpm --filter @dental/v2 exec playwright install chromium
 
+      # A-P0.1 第 5 次实测：node_modules 缓存恢复后 electron/dist 二进制
+      # 缺失，smoke:electron 直接失败。install.js 幂等，缺失才下载。
+      - name: Ensure Electron binary
+        run: node apps/v2/node_modules/electron/install.js
+
       - name: Full smoke suite
         env:
           V2_ADMIN_PASSWORD: v2-internal-smoke-admin
