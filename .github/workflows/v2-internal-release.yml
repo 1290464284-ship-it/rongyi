@@ -1,4 +1,4 @@
-﻿name: V2 Internal Release
+name: V2 Internal Release
 
 # Round7 H4：本 workflow 是手动内部发布通道（workflow_dispatch 专用），
 # 截至 Round7 审计从未在 Actions runner 上运行过（v2-internal-2.1.4 是早期
@@ -120,7 +120,7 @@ jobs:
           $exe = Get-ChildItem -LiteralPath apps/v2/release-v2-internal -Filter '*.exe' |
             Sort-Object LastWriteTime -Descending | Select-Object -First 1
           if (-not $exe) { throw "No installer produced under apps/v2/release-v2-internal" }
-          powershell -ExecutionPolicy Bypass -File apps/v2/scripts/cert-trust-smoke.ps1 -InstallerPath $exe.FullName
+          pwsh -ExecutionPolicy Bypass -File apps/v2/scripts/cert-trust-smoke.ps1 -InstallerPath $exe.FullName
 
       - name: Resolve version from package.json
         id: pkg_version
