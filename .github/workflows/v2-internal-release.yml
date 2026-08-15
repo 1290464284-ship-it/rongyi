@@ -120,7 +120,7 @@ jobs:
           $exe = Get-ChildItem -LiteralPath apps/v2/release-v2-internal -Filter '*.exe' |
             Sort-Object LastWriteTime -Descending | Select-Object -First 1
           if (-not $exe) { throw "No installer produced under apps/v2/release-v2-internal" }
-          powershell -ExecutionPolicy Bypass -File apps/v2/scripts/cert-trust-smoke.ps1 -InstallerPath $exe.FullName
+          pwsh -ExecutionPolicy Bypass -File apps/v2/scripts/cert-trust-smoke.ps1 -InstallerPath $exe.FullName
 
       - name: Resolve version from package.json
         id: pkg_version
