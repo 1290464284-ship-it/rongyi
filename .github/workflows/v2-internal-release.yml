@@ -1,4 +1,4 @@
-﻿name: V2 Internal Release
+name: V2 Internal Release
 
 # Round7 H4：本 workflow 是手动内部发布通道（workflow_dispatch 专用），
 # 截至 Round7 审计从未在 Actions runner 上运行过（v2-internal-2.1.4 是早期
@@ -84,6 +84,11 @@ jobs:
       # 内部发布此前依赖缓存侥幸通过，必须显式安装。
       - name: Install Playwright
         run: pnpm --filter @dental/v2 exec playwright install chromium
+
+      # A-P0.1 第 5 次实测：node_modules 缓存恢复后 electron/dist 二进制
+      # 缺失，smoke:electron 直接失败。install.js 幂等，缺失才下载。
+      - name: Ensure Electron binary
+        run: node apps/v2/node_modules/electron/install.js
 
       - name: Full smoke suite
         env:
