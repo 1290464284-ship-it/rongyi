@@ -41,52 +41,38 @@ $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate
 $cert.Import($certPath)
 Write-Step ("Certificate thumbprint: " + $cert.Thumbprint)
 
-# 1. 模拟干净机：移除 CurrentUser Root/TrustedPublisher 中同 Subject 的
-#    旧证书（含不同指纹的历史证书），再把当前证书导入两个 store。
+# 1. 导入到 CurrentUser Root/TrustedPublisher。A-P0.1 实测 X509Store
+#    枚举在 windows runner 上会挂起，certutil 无此问题；-f 幂等覆盖。
 foreach ($storeName in @("Root", "TrustedPublisher")) {
-  $store = New-Object System.Security.Cryptography.X509Certificates.X509Store($storeName, "CurrentUser")
-  $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-  try {
-    $stale = @()
-    foreach ($existing in $store.Certificates) {
-      if ($existing.Subject -eq $cert.Subject) {
-        $stale += $existing
-      }
-    }
-    foreach ($existing in $stale) {
-      $store.Remove($existing) | Out-Null
-      Write-Step ("Removed existing " + $storeName + " certificate " + $existing.Thumbprint)
-    }
-    $store.Add($cert)
-    Write-Step ("Imported certificate into CurrentUser " + $storeName)
-  } finally {
-    $store.Close()
+  $addOutput = (& certutil.exe -user -addstore -f $storeName $certPath 2>&1 | Out-String)
+  if ($LASTEXITCODE -ne 0 -or $addOutput -notmatch 'command completed successfully') {
+    throw ("certutil addstore " + $storeName + " failed: " + $addOutput)
   }
+  Write-Step ("Imported certificate into CurrentUser " + $storeName)
 }
 
 # 2. 复查导入结果：两个 store 都必须包含当前指纹。
 foreach ($storeName in @("Root", "TrustedPublisher")) {
-  $store = New-Object System.Security.Cryptography.X509Certificates.X509Store($storeName, "CurrentUser")
-  $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadOnly)
-  try {
-    $found = $false
-    foreach ($existing in $store.Certificates) {
-      if ($existing.Thumbprint -eq $cert.Thumbprint) {
-        $found = $true
-        break
-      }
-    }
-    if (-not $found) {
-      throw ("Certificate missing from CurrentUser " + $storeName + " after import")
-    }
-  } finally {
-    $store.Close()
+  $verifyOutput = (& certutil.exe -user -store $storeName $cert.Thumbprint 2>&1 | Out-String)
+  if ($LASTEXITCODE -ne 0 -or $verifyOutput -notmatch 'command completed successfully') {
+    throw ("certificate missing from CurrentUser " + $storeName + ": " + $verifyOutput)
   }
 }
 Write-Step "Certificate present in CurrentUser Root and TrustedPublisher"
 
 # 3. 安装包签名必须受信，且签名者指纹必须等于当前信任的证书指纹。
-$signature = Get-AuthenticodeSignature -FilePath $InstallerPath
+#    包一层 Start-Job 兜底：签名校验若异常挂起，120s 后显式失败而非卡死。
+$signatureJob = Start-Job -ScriptBlock {
+  param($path)
+  Get-AuthenticodeSignature -FilePath $path
+} -ArgumentList $InstallerPath
+if (-not (Wait-Job $signatureJob -Timeout 120)) {
+  Stop-Job $signatureJob -ErrorAction SilentlyContinue
+  Remove-Job $signatureJob -Force -ErrorAction SilentlyContinue
+  throw "Authenticode signature check timed out"
+}
+$signature = Receive-Job $signatureJob
+Remove-Job $signatureJob -Force -ErrorAction SilentlyContinue
 if ($signature.Status -ne "Valid") {
   throw ("Installer signature is not Valid: " + $signature.Status + " " + $signature.StatusMessage)
 }
