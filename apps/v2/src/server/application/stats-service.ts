@@ -1,6 +1,7 @@
 // 统计服务（M-04：由 read-services.ts 拆分）
 import type Database from 'better-sqlite3';
 import type { AppContext } from '../../domain/contracts';
+import { CLINIC_TZ_OFFSET_HOURS } from '../../domain/contracts';
 import { tenantWhere } from '../infrastructure/tenant';
 import { clinicDayEndUtc, clinicDayStartUtc } from '../infrastructure/clock';
 import {
@@ -78,8 +79,8 @@ export class StatsService {
       `revenue:${context?.clinicId ?? 'none'}:${startDate ?? ''}:${endDate ?? ''}:${groupBy}`,
       () => {
         const groupExpr = groupBy === 'month'
-          ? "strftime('%Y-%m', paidAt, '+8 hours')"
-          : "strftime('%Y-%m-%d', paidAt, '+8 hours')";
+          ? `strftime('%Y-%m', paidAt, '+${CLINIC_TZ_OFFSET_HOURS} hours')`
+          : `strftime('%Y-%m-%d', paidAt, '+${CLINIC_TZ_OFFSET_HOURS} hours')`;
         const where: string[] = ['deletedAt IS NULL', 'paidAt IS NOT NULL'];
         const params: unknown[] = [];
         const startBoundary = startDate ? clinicDayStartUtc(startDate) ?? startDate : undefined;
@@ -130,10 +131,10 @@ export class StatsService {
           params.push(...tenant.params);
         }
         return this.db.prepare(
-          `SELECT strftime('%Y-%m-%d', createdAt, '+8 hours') AS day, COUNT(*) AS count
+          `SELECT strftime('%Y-%m-%d', createdAt, '+${CLINIC_TZ_OFFSET_HOURS} hours') AS day, COUNT(*) AS count
            FROM Patient
            WHERE ${where.join(' AND ')}
-           GROUP BY strftime('%Y-%m-%d', createdAt, '+8 hours')
+           GROUP BY strftime('%Y-%m-%d', createdAt, '+${CLINIC_TZ_OFFSET_HOURS} hours')
            ORDER BY day ASC`,
         ).all(...params) as Array<Record<string, unknown>>;
       },

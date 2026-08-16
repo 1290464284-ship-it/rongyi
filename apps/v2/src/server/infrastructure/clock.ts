@@ -36,3 +36,15 @@ export function clinicDayEndUtc(value: string): string | null {
   if (start === null) return null;
   return new Date(new Date(start).getTime() + 86_400_000 - 1).toISOString();
 }
+
+/** ISO 8601 offset suffix for an integer-hour UTC offset, e.g. '+08:00' / '-05:00'. */
+export function tzOffsetSuffix(offsetHours: number): string {
+  const sign = offsetHours < 0 ? '-' : '+';
+  const hours = String(Math.abs(offsetHours)).padStart(2, '0');
+  return `${sign}${hours}:00`;
+}
+
+/** ISO 8601 offset suffix for the clinic timezone, e.g. '+08:00' for +8. */
+export function clinicTzOffsetSuffix(): string {
+  return tzOffsetSuffix(CLINIC_TZ_OFFSET_HOURS);
+}

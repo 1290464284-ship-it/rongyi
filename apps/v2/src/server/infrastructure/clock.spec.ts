@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { clinicDayEndUtc, clinicDayStartUtc } from './clock';
+import { clinicDayEndUtc, clinicDayStartUtc, clinicTzOffsetSuffix, tzOffsetSuffix } from './clock';
 
 describe('clinic day boundaries', () => {
   it('converts a clinic date to its UTC day start (Asia/Shanghai +8)', () => {
@@ -15,5 +15,18 @@ describe('clinic day boundaries', () => {
     expect(clinicDayStartUtc('2026-13-01')).toBeNull();
     expect(clinicDayStartUtc('not-a-date')).toBeNull();
     expect(clinicDayEndUtc('2026-02-30')).toBeNull();
+  });
+});
+
+describe('clinic timezone offset suffix', () => {
+  it('formats the clinic offset from the shared constant', () => {
+    expect(clinicTzOffsetSuffix()).toBe('+08:00');
+  });
+
+  it('formats positive, negative and zero offsets', () => {
+    expect(tzOffsetSuffix(8)).toBe('+08:00');
+    expect(tzOffsetSuffix(-5)).toBe('-05:00');
+    expect(tzOffsetSuffix(0)).toBe('+00:00');
+    expect(tzOffsetSuffix(10)).toBe('+10:00');
   });
 });
