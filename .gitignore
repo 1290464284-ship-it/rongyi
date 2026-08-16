@@ -34,3 +34,4 @@ apps/v2/performance/latest.json
 apps/v2/performance/snapshot-latest.json
 apps/v2/flaky-quarantine/history.json
 apps/v2/.stryker-tmp/
+dsh-usage/
