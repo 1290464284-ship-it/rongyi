@@ -3,7 +3,7 @@
 日期：2026-08-13（2026-08-16 更新）
 用途：覆盖率/变异测试的排除项唯一登记处。v8 ignore 标记数量由
 `pnpm --filter @dental/v2 run v8-ignore:report` ratchet（含单文件 ratchet，基线
-**289 处**，`apps/v2/quality/v8-ignore-baseline.json`）；**新增排除必须先在本文件登记理由并更新基线**。
+**276 处**，`apps/v2/quality/v8-ignore-baseline.json`）；**新增排除必须先在本文件登记理由并更新基线**。
 
 ## 1. 历史遗留（round 77 覆盖率校准，525 处）
 
@@ -30,7 +30,7 @@ Web **96.82% / 92.94% / 98.66% / 98.58%**，双门禁全绿——覆盖率口径
 `V2_V8_UPDATE_BASELINE=1 pnpm --filter @dental/v2 run v8-ignore:report` 更新基线。
 不可测分支不再裸加 ignore：要么补测试，要么在本文件「不可测防御分支」小节登记。
 
-**2026-08-16 全局优化审查再清理（294 → 289 处）：**
+**2026-08-16 全局优化审查再清理（294 → 276 处）：**
 
 - `router.ts:50-55`（3 处）：授权 403 分支是核心授权路径，删除标记并新增真实
   supertest 用例（router.spec「forbids resources whose module permission was
@@ -39,7 +39,7 @@ Web **96.82% / 92.94% / 98.66% / 98.58%**，双门禁全绿——覆盖率口径
   （repository.spec 传对象/数组过滤器断言 ValidationError）。
 - `ChargesPage.tsx`（1 处）：收费列表接入分页后「删除末页最后一条回退一页」
   从死代码变为可达分支，删除标记（回退逻辑由分页后的真实行为覆盖）。
-- 7 处「本页列表无分页/搜索，stale 恒为 false」类标记（MedicalRecordsPage、
+- 13 处「本页列表无分页/搜索，stale 恒为 false」类标记（MedicalRecordsPage、
   FirstExamsPage、CephalometricPage、TreatmentPlansPage、TreatmentsPage、
   VisitsPage、MemberCardsPage）：这些页面 2026-08-16 全部接入 `paged` 分页器，
   stale/disabled 守卫变为可达分支，删除标记并由页面分页 spec 真实覆盖。
