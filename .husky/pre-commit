@@ -1,8 +1,12 @@
 #!/usr/bin/env sh
 set -e
+set -o pipefail
 
 echo "Running V2 typecheck..."
 pnpm --filter @dental/v2 typecheck
 
 echo "Running V2 unit tests..."
-pnpm --filter @dental/v2 test
+# tee 落盘最近一次钩子测试日志（.husky/test-run.log，已被 *.log 忽略）：
+# 间歇性测试失败（如时序敏感用例）不再零痕迹，可在 .husky/test-run.log
+# 中定位失败测试文件（R78-05）。
+pnpm --filter @dental/v2 test 2>&1 | tee .husky/test-run.log
