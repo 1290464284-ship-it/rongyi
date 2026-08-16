@@ -434,7 +434,63 @@
 - **System 9 页**：DesktopSettings（C6 .page-head）；GlobalSearch/Backups/SystemOperations 等经全局组件受益；busy 文案类属延后项未动。
 - **Hr 2 页 / Front-desk 1 页**：经全局组件受益（无本轮专项）。
 
-### 9.6 延后项台账（二期）
+### 9.6 延后项台账（二期，已全部完成 → 第十章）
 
 A15（DataTable 真虚拟化）、A17（hub-tabs Unicode 还原）、C 级 busy 文案类（Backups/ChangeOwnPassword/DesktopSettings/Imaging 分类按钮等）、A3/A7/A8/A9/A10/A11 系统性刻度重构（--space-*/--font-size-*/卡片三族/z-index token/硬编码值收编）、A5 剩余部分（看板/时间线/表格双体系合并）、B2 看板键盘拖拽与 ISO 时间、B3 全局搜索 tab 容器与英文列名、B6 医生下拉 6 处错误态、C1 备份内联样式、C4 时间线 ISO 与 busy、C10 静默失败族、C13 导出类 busy、A9 统计卡统一。
+
+---
+
+## 十、二期实施记录（延后台账全部完成）
+
+### 10.1 改动清单（三个批次，全部提交）
+
+| 批次 | 项 | 改动 |
+|---|---|---|
+| 1（ef78724a） | A17 | hub-tabs.tsx 66 处 `\uXXXX` 转义还原为可读中文 |
+| | C 级 busy 文案 | BackupsPage（创建/校验/暂存/清理 disabled+文案）、ChangeOwnPasswordForm、DesktopSettingsPage 五个动作、ImagingPage 分类保存 |
+| | C1 | BackupsPage 备份摘要内联 grid → `.backup-comparison` 类 |
+| | C4 | 时间线时间 formatDateTime（不再直渲 ISO）；saveCustomFields busy 守卫 |
+| | C10 | RefundsPage 汇总失败错误+重试；CommissionPage 分类/医生下拉行内错误 |
+| | C13 | 导出逾期/导出明细/复制模板/复制话术 busy 守卫与文案 |
+| | B3 | 全局搜索筛选按钮 `.tabs` 容器；resource 列中文映射（列头「类型」） |
+| 2（9c2f6a8） | A7 | 字号七档 token `--fs-xs..2xl`（11/12/13/14/16/18/24），消灭 10.5/11.5/12.5/15/19/22px 孤值 |
+| | A3 | 控件高度三档 `--control-h-sm/md/lg` + `--space-1..8` 间距刻度 |
+| | A8 | 卡片内边距三档 `--card-pad/panel/compact`（18/16/12），kanban/board/upload/settle 收敛 |
+| | A10 | z-index 阶梯 token（--z-sidebar/topbar/modal/toast/tooltip/skip） |
+| | A11 | `--radius-pill` 收编 999px×3；skeleton 6px→--radius-xs；toast 白字→`--on-semantic`（暗色深青） |
+| | A9 | 经营分析/多门店统计卡统一 `.stat-cards/.stat-card`（第三种视觉消除） |
+| | 工具 | `scripts/tokenize-styles.mjs` 幂等有序替换脚本（styles:tokenize） |
+| 3+4（8ffa5f58 及后续） | B6 | 医生下拉错误态补齐 6 处（Visits/Treatments/FirstExam/PlanForm/ImagingForm/RecordDialog），与 PrescriptionForm 同范式 |
+| | B2+A5 | 预约看板合并到 KanbanBoard（拖拽+方向键键盘+role/aria）；卡片时间本地化；删除旧 `.board*` 样式 |
+| | A5 | 时间线合并 `.ui-timeline`（删旧 `.timeline*`）；ResourcePage 手写表格迁移 DataTable（扩展可选 header 渲染）；`.ui-kanban-card` 补 hover |
+| | A15 | DataTable 真虚拟化：首行实测行高 + 可视窗口 + 等高 spacer；**>100 行才启用滚动容器与窗口化，中短列表保持整表内联（避免嵌套滚动 UX 回退）**；500 行上限提示保留 |
+
+### 10.2 二期阶段 7 对比（同会话 before=ce6710ea / after=最终，双主题 21 对）
+
+| 页面 | 差异（强阈值） | 判定 |
+|---|---|---|
+| appointment-board | 4.7-5.1%，页高 2070→2258 | **看板合并到 KanbanBoard**：卡片布局/padding/hover 变化，预期内 |
+| dashboard | 2.4%，页高 +4px | A8 统计卡 padding 14→16（+2px×2）收敛，预期内 |
+| login | 1.0%（卡片区域） | A7 字号收敛（login-sub 11.5→12、h2 22→24），预期内 |
+| cephalometric/medical-records/settings | 0.58% | 侧栏品牌 15→16 + AA 噪声 |
+| appointments/charges/patients/inventory | 0.1-0.4% | 字号 token 同值引用 + AA 噪声 |
+| a1-modal-open | 0.46% | 弹窗内字号 token 同值 + AA 噪声 |
+
+**无任何异常差异**；所有变化均可归因于本轮预期改动。中短列表页高与改前完全一致（虚拟化阈值修正后复拍验证）。
+
+### 10.3 最终门禁
+
+| 门禁 | 结果 |
+|---|---|
+| `pnpm --filter @dental/v2 test` | ✅ 298 文件 / **3267 用例全绿**（+1 键盘移动新用例） |
+| `test:coverage:web` | ✅ 99.88 / 99.91 / 99.83 / 99.87 |
+| typecheck / lint / knip | ✅ 全部零告警 |
+| 二期截图 | ✅ before2/after2 同会话捕获，diff 结论见 10.2 |
+
+### 10.4 二期完成后盘点
+
+- 原始审计（阶段 0-1）产出的 A1-A19 / B1-B6 / C1-C14 / D1-D6 全部处置完毕：修复或明确豁免（用户可配置色）/归档。
+- 52 页逐页结论更新：本轮各模块经 B6/A5 合并/A7-A11 token 受益；第四章逐页表 + 9.5 节 + 10.1 合并构成完整结论。
+- 遗留待办（非审计项，可选）：QuickChargeDialog 单价 formatMoney、ReloadSync 每行实例化、B2 看板 focus 跟随播报微调——均属锦上添花，不阻塞交付。
+
 

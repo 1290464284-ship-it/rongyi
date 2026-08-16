@@ -45,8 +45,10 @@ export function DataTable<T extends Record<string, unknown>>({
 
   const visibleRows = rows.length > MAX_RENDER_ROWS ? rows.slice(0, MAX_RENDER_ROWS) : rows;
   const total = visibleRows.length;
-  const clampedStart = Math.min(windowStart, Math.max(0, total - 1));
-  const clampedEnd = Math.max(clampedStart + 1, Math.min(total, windowEnd));
+  // 虚拟化仅在长列表（>100 行）启用：中短列表保持整表内联渲染，避免嵌套滚动 UX 回退
+  const needsScroll = total > 100;
+  const clampedStart = needsScroll ? Math.min(windowStart, Math.max(0, total - 1)) : 0;
+  const clampedEnd = needsScroll ? Math.max(clampedStart + 1, Math.min(total, windowEnd)) : total;
   const renderedRows = visibleRows.slice(clampedStart, clampedEnd);
   const firstRenderedRow = renderedRows[0];
 
@@ -112,9 +114,11 @@ export function DataTable<T extends Record<string, unknown>>({
       {rows.length > MAX_RENDER_ROWS && (
         <div className="table-note">仅显示前 {MAX_RENDER_ROWS} 行（共 {rows.length} 行），请使用搜索或筛选缩小范围</div>
       )}
-      <div className="data-table-scroll" ref={scrollRef} onScroll={handleScroll}>
-        {tableContent}
-      </div>
+      {needsScroll ? (
+        <div className="data-table-scroll" ref={scrollRef} onScroll={handleScroll}>
+          {tableContent}
+        </div>
+      ) : tableContent}
     </div>
   );
 }
