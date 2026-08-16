@@ -180,7 +180,17 @@ export function PatientsPage() {
         tags: splitLines(form.tags),
         remark: form.remark || undefined,
       })}
+      onEditLoad={async (row) => {
+        // 列表返回的 idCard 已按数据最小化掩码（保留尾号），编辑时从详情接口取完整值回填，
+        // 避免把掩码写回库。
+        const detail = await apiRequest<PatientRow>(`/resources/patients/${String(row.id)}`);
+        return { idCard: String(detail.idCard ?? '') };
+      }}
       onBeforeSubmit={async (form) => {
+        // 兜底：详情加载失败/被跳过时掩码值会留在表单，提交前拦截防止掩码落库。
+        if (String(form.idCard ?? '').includes('*')) {
+          return '身份证号未完整加载，请关闭编辑框后重新打开编辑';
+        }
         if (!form.phone && !form.code) return null;
         try {
           const duplicateCheck = await apiRequest<Page<PatientRow>>(

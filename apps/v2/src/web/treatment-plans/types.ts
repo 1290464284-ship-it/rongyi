@@ -50,6 +50,8 @@ export interface TreatmentPlanForm {
   name: string;
   status: string;
   totalFee: string;
+  /** 用户在编辑框手动改过总价（S-3 一致性护栏：手动议价需显式确认）。 */
+  totalFeeConfirmed?: boolean;
   remark: string;
   items: PlanItemForm[];
 }

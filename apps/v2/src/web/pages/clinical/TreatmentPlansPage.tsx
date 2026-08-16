@@ -88,6 +88,7 @@ export function TreatmentPlansPage() {
             name: String(row.name ?? ''),
             status: String(row.status ?? 'APPROVED'),
             totalFee: row.totalFee === null || row.totalFee === undefined ? '' : (Number(row.totalFee) / 100).toFixed(2),
+            totalFeeConfirmed: false,
             remark: String(row.remark ?? ''),
             // 明细行由 PlanFormFields 打开编辑时异步拉取回填（formFromRow 为同步）
             items: [newItem()],

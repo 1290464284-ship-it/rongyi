@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { fetchAllPages } from '../lib/api';
 import { DoctorSelect, SearchableSelect } from '../components';
 import { centsToYuanString } from '../lib/format';
+import { CLINICAL_STATUS_LABELS } from '../lib/labels';
 import { errorMessage } from '../lib/messages';
 import { useToast } from '../lib/toast-context';
 import type { PlanItemForm, PlanItemRow, TreatmentPlanForm } from './types';
@@ -84,11 +85,20 @@ export function PlanFormFields({
       </label>
       <label>
         状态
-        <input value={form.status} onChange={(event) => update({ status: event.target.value })} />
+        <select value={form.status} onChange={(event) => update({ status: event.target.value })}>
+          {Object.entries(CLINICAL_STATUS_LABELS).map(([value, label]) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
       </label>
       <label>
         总费用
-        <input type="number" min="0" value={form.totalFee} onChange={(event) => update({ totalFee: event.target.value })} />
+        <input
+          type="number"
+          min="0"
+          value={form.totalFee}
+          onChange={(event) => update({ totalFee: event.target.value, totalFeeConfirmed: true })}
+        />
       </label>
       <label>
         备注

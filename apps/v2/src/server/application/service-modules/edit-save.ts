@@ -30,6 +30,8 @@ export interface TreatmentPlanSaveInput {
   name: string;
   status: string;
   totalFee: number;
+  /** 手动议价总价需显式确认；false/缺省时总价必须与明细小计（含计划折扣）一致。 */
+  totalFeeConfirmed?: boolean;
   remark?: string;
   items: TreatmentPlanSaveItem[];
 }
@@ -89,6 +91,11 @@ export class EditSaveService {
       if (!current || Number(current.totalFee) !== input.totalFee || current.status !== input.status) {
         throw new ConflictError('治疗计划已划价，费用与状态字段不可修改');
       }
+    } else {
+      // S-3 一致性护栏（未划价计划）：期望总价 = Σ(明细有效小计) × (1 - 计划折扣率)，
+      // 与 TreatmentPlanBillingService.planTotal 同口径。客户端传入手动议价总价时
+      // 必须显式确认（totalFeeConfirmed），否则拒绝——防止明细与总额长期脱节。
+      this.assertPlanTotalMatches(planId, items, input.totalFee, input.totalFeeConfirmed === true);
     }
     this.db.transaction(() => {
       const main = this.db.prepare(
@@ -302,6 +309,39 @@ export class EditSaveService {
       id: item.id === undefined || item.id === null || item.id === '' ? undefined : String(item.id),
       code, name, category, price, quantity, teethNumbers, status,
     };
+  }
+
+  /**
+   * S-3 一致性护栏：期望总价 = Σ(明细有效小计) × (1 - 计划折扣率)（与
+   * TreatmentPlanBillingService.planTotal 同口径）。已存在的明细沿用其
+   * 明细级 discountRate（编辑载荷不含该字段，服务端不覆盖）。
+   * 仅未划价计划执行；划价后计划由 billed 守卫接管。
+   */
+  private assertPlanTotalMatches(planId: string, items: TreatmentPlanSaveItem[], inputTotalFee: number, confirmed: boolean): void {
+    const plan = this.db.prepare(
+      'SELECT discountType, discountRate FROM TreatmentPlan WHERE id = ? AND deletedAt IS NULL',
+    ).get(planId) as { discountType: string | null; discountRate: number | null } | undefined;
+    const planRate = plan && plan.discountType !== 'NONE' && plan.discountType !== null && plan.discountType !== undefined
+      ? Number(plan.discountRate ?? 0)
+      : 0;
+    const itemRates = new Map<string, number | null>();
+    if (items.some((item) => item.id)) {
+      const rows = this.db.prepare(
+        'SELECT id, discountRate FROM TreatmentPlanItem WHERE planId = ? AND deletedAt IS NULL',
+      ).all(planId) as Array<{ id: string; discountRate: number | null }>;
+      for (const row of rows) itemRates.set(row.id, row.discountRate);
+    }
+    const rawSum = items.reduce((sum, item) => {
+      const itemRate = item.id ? (itemRates.get(item.id) ?? null) : null;
+      const effectivePrice = itemRate === null || itemRate === undefined
+        ? item.price
+        : Math.round(item.price * (1 - Number(itemRate) / 100));
+      return sum + Math.round(effectivePrice * item.quantity);
+    }, 0);
+    const expected = Math.round(rawSum * (1 - planRate / 100));
+    if (Number(inputTotalFee) !== expected && !confirmed) {
+      throw new ConflictError(`总价与明细不一致（按当前明细应付 ${expected} 分）；如需手工议价请确认后重试`);
+    }
   }
 
   private planItemMatches(existing: Record<string, unknown>, item: TreatmentPlanSaveItem): boolean {

@@ -303,4 +303,23 @@ describe('CrudPage', () => {
     });
     expect(screen.queryByText('确定删除该记录吗？')).toBeNull();
   });
+
+  it('merges onEditLoad patches and disables submit while loading', async () => {
+    mockData();
+    render(
+      <CrudPage<ThingRow, ThingForm>
+        {...baseProps()}
+        onEditLoad={async () => ({ name: '详细-物品甲' })}
+      />,
+      { wrapper },
+    );
+    await screen.findByText('物品甲');
+    fireEvent.click(screen.getByText('编辑'));
+    // 详情补丁合并进表单（加载期间提交按钮为「加载中...」）
+    expect((await screen.findByLabelText('名称') as HTMLInputElement).value).toBe('详细-物品甲');
+    fireEvent.click(screen.getByText('保存'));
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith('/resources/things/t-1', expect.objectContaining({ method: 'PATCH' }));
+    });
+  });
 });

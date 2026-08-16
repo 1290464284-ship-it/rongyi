@@ -38,8 +38,8 @@ describe('EditSaveService', () => {
     db.prepare(
       `INSERT INTO TreatmentPlan (
          id, clinicId, createdAt, updatedAt, deletedAt,
-         patientId, doctorId, name, status, totalFee, remark
-       ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?)`,
+         patientId, doctorId, name, status, totalFee, remark, discountType, discountRate
+       ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id, context.clinicId, now, now,
       overrides.patientId ?? 'patient-demo-001',
@@ -48,6 +48,8 @@ describe('EditSaveService', () => {
       overrides.status ?? 'APPROVED',
       overrides.totalFee ?? 1000,
       overrides.remark ?? null,
+      overrides.discountType ?? null,
+      overrides.discountRate ?? null,
     );
   }
 
@@ -55,14 +57,15 @@ describe('EditSaveService', () => {
     db.prepare(
       `INSERT INTO TreatmentPlanItem (
          id, clinicId, createdAt, updatedAt, deletedAt, planId,
-         code, name, category, price, quantity, teethNumbers, status, billed
-       ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         code, name, category, price, quantity, teethNumbers, status, billed, discountRate
+       ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       id, context.clinicId, now, now, planId,
       overrides.code ?? 'CODE', overrides.name ?? '项目', overrides.category ?? 'GENERAL',
       overrides.price ?? 100, overrides.quantity ?? 1,
       JSON.stringify(overrides.teethNumbers ?? []), overrides.status ?? 'PLANNED',
       overrides.billed ?? 0,
+      overrides.discountRate ?? null,
     );
   }
 
@@ -528,7 +531,8 @@ describe('EditSaveService', () => {
       doctorId: 'user-admin-001',
       name: 'Global 2 Updated',
       status: 'APPROVED',
-      totalFee: 200,
+      // S-3 护栏：未划价计划总价必须与明细小计一致（此处仅保留一条 100×1 明细）
+      totalFee: 100,
       items: [
         { id: 'item-global-keep', code: 'A', name: 'A', category: 'GENERAL', price: 100, quantity: 1, teethNumbers: '11' as never, status: 'PLANNED' },
       ],
@@ -583,5 +587,80 @@ describe('EditSaveService', () => {
       ],
     }, context);
     expect(result.items).toBe(2);
+  });
+
+  it('rejects unbilled plan totals that drift from item sums unless explicitly confirmed', () => {
+    const service = new EditSaveService(db);
+    const items = [
+      { id: 'item-drift', code: 'A', name: 'A', category: 'GENERAL', price: 100, quantity: 1, teethNumbers: [], status: 'PLANNED' },
+      { code: 'B', name: 'B', category: 'GENERAL', price: 200, quantity: 2, teethNumbers: [], status: 'PLANNED' },
+    ];
+    // 期望 = 100 + 400 = 500
+    insertPlan('plan-drift');
+    insertPlanItem('item-drift', 'plan-drift', { code: 'A', name: 'A' });
+    expect(() => service.saveTreatmentPlan('plan-drift', {
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      name: 'Drift',
+      status: 'APPROVED',
+      totalFee: 499,
+      items,
+    }, context)).toThrow(ConflictError);
+    // 显式确认后允许手工议价总价
+    const confirmed = service.saveTreatmentPlan('plan-drift', {
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      name: 'Drift',
+      status: 'APPROVED',
+      totalFee: 499,
+      totalFeeConfirmed: true,
+      items,
+    }, context);
+    expect(confirmed.items).toBe(2);
+    expect((db.prepare('SELECT totalFee FROM TreatmentPlan WHERE id = ?').get('plan-drift') as { totalFee: number }).totalFee).toBe(499);
+    // 一致时无需确认
+    const exact = service.saveTreatmentPlan('plan-drift', {
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      name: 'Drift Exact',
+      status: 'APPROVED',
+      totalFee: 500,
+      items,
+    }, context);
+    expect(exact.items).toBe(2);
+  });
+
+  it('keeps the consistency check plan-discount and item-discount aware', () => {
+    const service = new EditSaveService(db);
+    // 计划级折扣 10%（九折）：期望 = round(100 × 0.9) = 90
+    insertPlan('plan-discount', { discountType: 'WHOLE', discountRate: 10 });
+    insertPlanItem('item-discount-plan', 'plan-discount', { code: 'A', name: 'A' });
+    expect(() => service.saveTreatmentPlan('plan-discount', {
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      name: 'Discounted',
+      status: 'APPROVED',
+      totalFee: 100,
+      items: [{ id: 'item-discount-plan', code: 'A', name: 'A', category: 'GENERAL', price: 100, quantity: 1, teethNumbers: [], status: 'PLANNED' }],
+    }, context)).toThrow(ConflictError);
+    service.saveTreatmentPlan('plan-discount', {
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      name: 'Discounted Exact',
+      status: 'APPROVED',
+      totalFee: 90,
+      items: [{ id: 'item-discount-plan', code: 'A', name: 'A', category: 'GENERAL', price: 100, quantity: 1, teethNumbers: [], status: 'PLANNED' }],
+    }, context);
+    // 明细级折扣 50%：期望 = round(100 × 0.5) = 50
+    insertPlan('plan-item-discount');
+    insertPlanItem('item-item-discount', 'plan-item-discount', { code: 'B', name: 'B', discountRate: 50 });
+    service.saveTreatmentPlan('plan-item-discount', {
+      patientId: 'patient-demo-001',
+      doctorId: 'user-admin-001',
+      name: 'Item Discounted',
+      status: 'APPROVED',
+      totalFee: 50,
+      items: [{ id: 'item-item-discount', code: 'B', name: 'B', category: 'GENERAL', price: 100, quantity: 1, teethNumbers: [], status: 'PLANNED' }],
+    }, context);
   });
 });
