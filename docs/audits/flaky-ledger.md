@@ -56,3 +56,14 @@
 
 **当前状态：** `test:flaky` 使用完整 `--sequence.shuffle`（flaky-detect.mjs），
 近 3 条历史全 passed（flakinessRate 0），质量分反 flaky 输入 100%。
+
+## 2026-08-16 round 78: shuffled runs green; retrospective on 08-14 transient failure
+
+- Round 78 audit re-ran `test:flaky`（完整 `--sequence.shuffle`）：
+  2 轮 × 304 文件 / 3310 用例全绿，history.json 新增两条 passed。
+- 回顾：history 显示 2026-08-14T16:30Z run 1 失败、16:35Z 复跑即过，
+  本地质量分快照（22:12Z）因此读到 1/3 失败窗口（flakinessRate 0.333，
+  score 96.61）。该次失败无台账条目，且 history.json 不记录测试名/文件，
+  失败测试不可追溯。
+- 改进项（已写入第 78 轮报告 R78-05）：flaky-detect 应把失败测试的文件
+  路径写入 history 条目，让单次瞬时失败留下取证痕迹。
