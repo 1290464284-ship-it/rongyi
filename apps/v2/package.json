@@ -153,7 +153,8 @@
       "electron/**/*",
       "dist-electron/**/*",
       "package.json",
-      "build/**/*"
+      "build/**/*",
+      "!build/internal-signing*"
     ],
     "extraResources": [
       {
@@ -161,9 +162,7 @@
         "to": "legacy"
       }
     ],
-    "asarUnpack": [
-      "build/internal-signing.pfx.cer"
-    ],
+    "asarUnpack": [],
     "win": {
       "verifyUpdateCodeSignature": true,
       "icon": "build/icon.ico",
