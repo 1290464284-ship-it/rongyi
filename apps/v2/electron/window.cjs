@@ -211,12 +211,15 @@ function createWindow() {
     : (runtimeHtml ? pathToFileURL(runtimeHtml).toString() : INDEX_HTML_FILE_URL);
   mainWindow.loadURL(url);
   mainWindow.on('close', (event) => {
-    saveWindowState(mainWindow);
     if (!state.isQuitting && state.tray) {
+      // 仅“关窗进托盘”路径在此保存；正常退出由 closed 统一保存，避免重复写盘。
+      saveWindowState(mainWindow);
       event.preventDefault();
       mainWindow.hide();
     }
   });
+  // destroy() 直接销毁的窗口不触发 close，closed 是唯一兜底（saveWindowState
+  // 内部对已销毁窗口 no-op，不会二次写入）。
   mainWindow.on('closed', () => {
     saveWindowState(mainWindow);
   });

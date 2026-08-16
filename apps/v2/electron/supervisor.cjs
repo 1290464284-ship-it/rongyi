@@ -81,5 +81,3 @@ setInterval(() => {
     process.exit(0);
   }, delay);
 }, POLL_MS);
-// 注意：绝不能 unref 轮询定时器——它是 supervisor 唯一的事件循环引用，
-// unref 后进程会在首次 tick 前立即退出，看门狗形同虚设。

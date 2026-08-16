@@ -88,7 +88,7 @@
     },
     {
       "file": "src/server/application/service-modules/wechat-reminder.ts",
-      "line": 270,
+      "line": 281,
       "mutator": "LogicalOperator",
       "replacement": "start === null && end === null",
       "reason": "clinicDayEndUtc 为 null 当且仅当 clinicDayStartUtc 为 null，start/end 恒同时为 null 或同时非 null，|| 与 && 行为恒等"

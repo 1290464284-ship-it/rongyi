@@ -69,6 +69,7 @@ describe('electron api process', () => {
     const previousFutureConfig = process.env.V2_FUTURE_CONFIG;
     const previousWechatUrl = process.env.V2_WECHAT_API_URL;
     const previousWechatSecret = process.env.V2_WECHAT_APP_SECRET;
+    const previousWechatAppId = process.env.V2_WECHAT_APP_ID;
     const previousAdminPassword = process.env.V2_ADMIN_PASSWORD;
     process.env.V2_DB_PATH = 'C:\\should-not-leak\\v2.sqlite';
     process.env.V2_JWT_SECRET = 'should-not-leak-jwt';
@@ -80,6 +81,7 @@ describe('electron api process', () => {
     process.env.V2_FUTURE_CONFIG = 'should-not-leak';
     process.env.V2_WECHAT_API_URL = 'https://wechat-gateway.example/send';
     process.env.V2_WECHAT_APP_SECRET = 'should-not-leak-wechat-secret';
+    process.env.V2_WECHAT_APP_ID = 'should-not-leak-wechat-appid';
     process.env.V2_ADMIN_PASSWORD = 'should-not-leak-admin';
     process.env.V2_WEB_DEV_PORT = '35180';
     process.env.V2_WEB_URL = 'http://localhost:35180';
@@ -106,6 +108,7 @@ describe('electron api process', () => {
       expect(env.V2_FUTURE_CONFIG).toBeUndefined();
       expect(env.V2_WECHAT_API_URL).toBe('https://wechat-gateway.example/send');
       expect(env.V2_WECHAT_APP_SECRET).toBeUndefined();
+      expect(env.V2_WECHAT_APP_ID).toBeUndefined();
       expect(env.V2_ADMIN_PASSWORD).toBeUndefined();
       expect(env.V2_HOST).toBe('127.0.0.1');
       expect(env.V2_DATA_DIR).toBe(path.join('C:\\user-data', 'data'));
@@ -125,6 +128,7 @@ describe('electron api process', () => {
       });
       expect(devEnv.V2_ADMIN_PASSWORD).toBe('should-not-leak-admin');
       expect(devEnv.V2_WECHAT_APP_SECRET).toBeUndefined();
+      expect(devEnv.V2_WECHAT_APP_ID).toBeUndefined();
       expect(devEnv.V2_WEB_DEV_PORT).toBe('35180');
       expect(devEnv.V2_WEB_URL).toBe('http://localhost:35180');
     } finally {
@@ -148,6 +152,8 @@ describe('electron api process', () => {
       else process.env.V2_WECHAT_API_URL = previousWechatUrl;
       if (previousWechatSecret === undefined) delete process.env.V2_WECHAT_APP_SECRET;
       else process.env.V2_WECHAT_APP_SECRET = previousWechatSecret;
+      if (previousWechatAppId === undefined) delete process.env.V2_WECHAT_APP_ID;
+      else process.env.V2_WECHAT_APP_ID = previousWechatAppId;
       if (previousAdminPassword === undefined) delete process.env.V2_ADMIN_PASSWORD;
       else process.env.V2_ADMIN_PASSWORD = previousAdminPassword;
     }

@@ -4,15 +4,24 @@ import { tenantAnd } from '../tenant';
 import { trackResourceWrite } from '../write-tracking';
 import type { ClinicalWorkflowRepository } from '../../application/ports';
 
+/** getRow/updateStatus 仅允许操作这些临床表；表名来自调用方字面量，白名单防未来误传用户输入。 */
+const WORKFLOW_TABLES = new Set(['Registration', 'Visit', 'FirstExam', 'Treatment', 'MedicalRecord']);
+
 export class SqliteClinicalWorkflowRepository implements ClinicalWorkflowRepository {
   constructor(private readonly db: Database.Database) {}
 
+  private assertTable(table: string): void {
+    if (!WORKFLOW_TABLES.has(table)) throw new Error(`Clinical workflow table not allowed: ${table}`);
+  }
+
   getRow(table: string, id: string, clinicId?: string | null): Record<string, unknown> | null {
+    this.assertTable(table);
     const params = clinicId ? [id, clinicId] : [id];
     return (this.db.prepare(`SELECT * FROM ${table} WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`).get(...params) as Record<string, unknown> | undefined) ?? null;
   }
 
   updateStatus(table: string, id: string, status: string, now: string, extra: Record<string, unknown> = {}, clinicId?: string | null, fromStatus?: string): number {
+    this.assertTable(table);
     const setClause = Object.keys(extra).map((key) => `${key} = ?`).join(', ');
     const params = Object.values(extra).map((value) => value ?? null);
     const fromClause = fromStatus !== undefined ? ' AND status = ?' : '';

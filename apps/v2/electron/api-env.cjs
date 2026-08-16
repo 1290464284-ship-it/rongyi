@@ -20,7 +20,9 @@ function buildApiChildEnv({ userDataDir, legacyBase, secretFilePath, apiPort, is
     ELECTRON_RUN_AS_NODE: '1',
   };
   // 显式白名单：只透传 API 实际需要的可选配置，避免未来新增 V2_* 时无意把
-  // 密钥、路径或明文备份开关泄漏给子进程。JWT/备份密钥只经 V2_SECRET_FILE。
+  // 密钥、路径或明文备份开关泄漏给子进程。JWT/备份密钥、微信 AppId/AppSecret、
+  // 首启引导密码均只经 V2_SECRET_FILE（api-process 写入 0o600 临时文件），
+  // 不进子进程环境块；此处白名单仅含非密钥配置。
   // dev 态 CORS 白名单依赖 V2_WEB_DEV_PORT / V2_WEB_URL（app.ts 读取），
   // smoke:all 随机端口场景必须透传，否则渲染器来源被 CORS 拒绝。
   const optionalKeys = [
@@ -29,7 +31,6 @@ function buildApiChildEnv({ userDataDir, legacyBase, secretFilePath, apiPort, is
     'V2_SYNC_CHANGE_RETENTION_DAYS',
     'V2_CORS_ORIGIN',
     'V2_WECHAT_API_URL',
-    'V2_WECHAT_APP_ID',
     'V2_WEB_DEV_PORT',
     'V2_WEB_URL',
   ];

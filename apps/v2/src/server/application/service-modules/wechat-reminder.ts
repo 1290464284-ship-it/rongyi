@@ -278,11 +278,18 @@ export class WechatReminderService {
       `INSERT OR IGNORE INTO WechatReminder (id, clinicId, patientId, scene, scheduledDate, sourceId, content, status, createdAt, updatedAt, deletedAt)
        VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, NULL)`,
     );
-    const exists = this.db.prepare(
-      `SELECT 1 FROM WechatReminder
-       WHERE patientId = ? AND scene = ? AND scheduledDate = ? AND sourceId = ? AND deletedAt IS NULL${tenantAnd(clinicId)}
-       LIMIT 1`,
-    );
+    // 批内一次 IN 查询载入当天已存在的 (patientId, sourceId)，替代逐候选 exists 查询（原 3×N 次/日）。
+    // 唯一索引 (clinicId, patientId, scene, scheduledDate, sourceId) + INSERT OR IGNORE 仍兜底并发正确性。
+    const loadExistingKeys = (scene: string, date: string, batch: ReminderCandidate[]): Set<string> => {
+      if (batch.length === 0) return new Set();
+      const placeholders = batch.map(() => '?').join(', ');
+      const rows = this.db.prepare(
+        `SELECT patientId, sourceId FROM WechatReminder
+         WHERE scene = ? AND scheduledDate = ? AND sourceId IN (${placeholders}) AND deletedAt IS NULL${tenantAnd(clinicId)}`,
+      ).all(scene, date, ...batch.map((candidate) => candidate.sourceId), ...tenantParams(clinicId)) as Array<{ patientId: string; sourceId: string | null }>;
+      return new Set(rows.map((row) => `${row.patientId}\u0000${row.sourceId ?? ''}`));
+    };
+    const dedupeKey = (candidate: ReminderCandidate): string => `${candidate.patientId}\u0000${candidate.sourceId ?? ''}`;
 
     const appointmentStmt = this.db.prepare(
       `SELECT a.id AS sourceId, a.patientId, p.name AS patientName, a.startTime
@@ -318,8 +325,9 @@ export class WechatReminderService {
       let lastAppointmentId = '';
       while (true) {
         const batch = appointmentStmt.all(...appointmentRange, lastAppointmentId, ...tenantParams(clinicId)) as ReminderCandidate[];
+        const seen = loadExistingKeys('APPOINTMENT_REMINDER', today, batch);
         for (const candidate of batch) {
-          if (exists.get(candidate.patientId, 'APPOINTMENT_REMINDER', today, candidate.sourceId, ...tenantParams(clinicId))) continue;
+          if (seen.has(dedupeKey(candidate))) continue;
           const content = config.appointmentContent
             .replaceAll('{patientName}', () => candidate.patientName ?? '')
             // 候选查询按 startTime BETWEEN 过滤，startTime 恒非空
@@ -332,8 +340,9 @@ export class WechatReminderService {
       let lastRecallId = '';
       while (true) {
         const batch = recallStmt.all(...recallRange, lastRecallId, ...tenantParams(clinicId)) as ReminderCandidate[];
+        const seen = loadExistingKeys('TREATMENT_RECALL', today, batch);
         for (const candidate of batch) {
-          if (exists.get(candidate.patientId, 'TREATMENT_RECALL', today, candidate.sourceId, ...tenantParams(clinicId))) continue;
+          if (seen.has(dedupeKey(candidate))) continue;
           const content = config.recallContent
             .replaceAll('{patientName}', () => candidate.patientName ?? '')
             .replaceAll('{days}', () => String(config.recallDaysAfter));
@@ -345,8 +354,9 @@ export class WechatReminderService {
       let lastFirstExamId = '';
       while (true) {
         const batch = firstExamStmt.all(...firstExamRange, lastFirstExamId, ...tenantParams(clinicId)) as ReminderCandidate[];
+        const seen = loadExistingKeys('FIRST_EXAM_NUDGE', today, batch);
         for (const candidate of batch) {
-          if (exists.get(candidate.patientId, 'FIRST_EXAM_NUDGE', today, candidate.sourceId, ...tenantParams(clinicId))) continue;
+          if (seen.has(dedupeKey(candidate))) continue;
           const content = config.firstExamContent.replaceAll('{patientName}', () => candidate.patientName ?? '');
           insert.run(randomUUID(), clinicId, candidate.patientId, 'FIRST_EXAM_NUDGE', today, candidate.sourceId, content, now, now);
         }

@@ -256,6 +256,19 @@ describe('resource router', () => {
       .expect(403);
   });
 
+  it('forbids resources whose module permission was revoked for the user', async () => {
+    // 角色允许（DOCTOR 可访问 patients），但显式 UserPermission 覆盖撤回了 patients 模块权限。
+    db.prepare(
+      `INSERT INTO UserPermission (userId, permission, allowed, clinicId, createdAt, updatedAt, deletedAt)
+       VALUES ('user-router-doctor', 'patients', 0, 'clinic-v2-001', ?, ?, NULL)`,
+    ).run(now, now);
+    const res = await request(app)
+      .get('/api/v2/resources/patients')
+      .set('Authorization', `Bearer ${receptionToken}`)
+      .expect(403);
+    expect(res.body.code).toBe('FORBIDDEN');
+  });
+
   it('blocks fee and status edits on billed treatment plans', async () => {
     const planId = 'router-plan-locked-fields';
     const nowIso = new Date().toISOString();

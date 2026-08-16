@@ -106,7 +106,8 @@ describe('EditSaveService', () => {
       doctorId: 'user-admin-001',
       name: '新计划',
       status: 'APPROVED',
-      totalFee: 900,
+      // 存在已划价明细（item-2 billed=1）：费用与状态字段不可变更，保持原值
+      totalFee: 1000,
       remark: '备注',
       items: [
         { id: 'item-2', code: 'B', name: 'B', category: 'GENERAL', price: 200, quantity: 1, teethNumbers: [], status: 'PLANNED' },
@@ -120,7 +121,7 @@ describe('EditSaveService', () => {
       name: string; totalFee: number; remark: string | null;
     };
     expect(main.name).toBe('新计划');
-    expect(main.totalFee).toBe(900);
+    expect(main.totalFee).toBe(1000);
     expect(main.remark).toBe('备注');
     const updated = db.prepare('SELECT name FROM TreatmentPlanItem WHERE id = ?').get('item-1') as { name: string };
     expect(updated.name).toBe('A改');
@@ -145,6 +146,33 @@ describe('EditSaveService', () => {
     }, context)).toThrow(ConflictError);
     const main = db.prepare('SELECT name FROM TreatmentPlan WHERE id = ?').get('plan-2') as { name: string };
     expect(main.name).toBe('计划');
+  });
+
+  it('locks fee and status fields once a plan has billed items but allows other field edits', () => {
+    insertPlan('plan-billed-lock');
+    insertPlanItem('bi-lock', 'plan-billed-lock', { code: 'L', name: 'L', billed: 1 });
+    const service = new EditSaveService(db);
+    const baseItems = [
+      { id: 'bi-lock', code: 'L', name: 'L', category: 'GENERAL', price: 100, quantity: 1, teethNumbers: [], status: 'PLANNED' },
+    ];
+    // 变更 totalFee → 拒绝
+    expect(() => service.saveTreatmentPlan('plan-billed-lock', {
+      patientId: 'patient-demo-001', doctorId: 'user-admin-001', name: '计划', status: 'APPROVED', totalFee: 999, items: baseItems,
+    }, context)).toThrow('治疗计划已划价，费用与状态字段不可修改');
+    // 变更 status → 拒绝
+    expect(() => service.saveTreatmentPlan('plan-billed-lock', {
+      patientId: 'patient-demo-001', doctorId: 'user-admin-001', name: '计划', status: 'IN_PROGRESS', totalFee: 1000, items: baseItems,
+    }, context)).toThrow('治疗计划已划价，费用与状态字段不可修改');
+    // 仅变更名称/备注（费用与状态保持原值）→ 允许
+    const result = service.saveTreatmentPlan('plan-billed-lock', {
+      patientId: 'patient-demo-001', doctorId: 'user-admin-001', name: '改名', status: 'APPROVED', totalFee: 1000, remark: '备注', items: baseItems,
+    }, context);
+    expect(result.id).toBe('plan-billed-lock');
+    const main = db.prepare('SELECT name, remark FROM TreatmentPlan WHERE id = ?').get('plan-billed-lock') as {
+      name: string; remark: string | null;
+    };
+    expect(main.name).toBe('改名');
+    expect(main.remark).toBe('备注');
   });
 
   it('atomically saves prescription main and items', () => {
@@ -271,7 +299,8 @@ describe('EditSaveService', () => {
       doctorId: 'user-admin-001',
       name: 'Teeth Plan',
       status: 'APPROVED',
-      totalFee: 100,
+      // 已划价明细存在：费用与状态保持原值
+      totalFee: 1000,
       items: [{ id: 'item-teeth-corrupt', code: 'T', name: 'T', category: 'GENERAL', price: 100, quantity: 1, teethNumbers: [], status: 'PLANNED' }],
     }, context)).not.toThrow();
   });
@@ -546,7 +575,8 @@ describe('EditSaveService', () => {
       doctorId: 'user-admin-001',
       name: 'K',
       status: 'APPROVED',
-      totalFee: 200,
+      // 已划价明细存在：费用与状态保持原值
+      totalFee: 1000,
       items: [
         { id: 'bi-array', code: 'K', name: 'K', category: 'GENERAL', price: 100, quantity: 1, teethNumbers: [], status: 'PLANNED' },
         { id: 'bi-five', code: 'K2', name: 'K2', category: 'GENERAL', price: 100, quantity: 1, teethNumbers: [], status: 'PLANNED' },

@@ -1,7 +1,8 @@
 import * as crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import Database from 'better-sqlite3';import { createApp } from './http/app';
+import Database from 'better-sqlite3';
+import { createApp } from './http/app';
 import { createDatabase, createPerformanceIndexes, seedDatabase, syncLegacySchema } from './infrastructure/database';
 import { cleanupIdempotencyRecords } from './infrastructure/idempotency';
 import { Logger } from './infrastructure/logger';

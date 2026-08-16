@@ -236,7 +236,9 @@ export class MemberDiscountService {
     // 明细维度折扣按 items 小计计算，而 baseTotal 由调用方传入；两者不一致时
     // 折扣可能超过原价，这里兜底保证报价总价与优惠金额都不会为负。
     const rawTotal = Math.max(0, baseTotal - discount);
-    const total = roundTotal(rawTotal, roundingMode);
+    // ROUND 取整可能向上越过原价（如 baseTotal=199、折扣为 0 → 200），封顶到原价，
+    // 保证 finalDiscount 恒 >= 0（报价口径不允许超收）。
+    const total = Math.min(baseTotal, roundTotal(rawTotal, roundingMode));
     const finalDiscount = baseTotal - total;
 
     return {

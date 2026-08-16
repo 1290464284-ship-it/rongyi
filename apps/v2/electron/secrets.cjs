@@ -7,31 +7,55 @@ function isUsablePlainSecret(plain) {
   return typeof plain === 'string' && plain.length >= 32 && !/[\u0000-\u001f\u007f]/.test(plain);
 }
 
+// H4：safeStorage 不可用时仅警告一次（避免 jwt/backup-key 两次调用弹两次窗）
+const plaintextWarningShown = { value: false };
+
 function getOrCreateSecret(fileName = 'jwt-secret') {
   const secretsDir = path.join(app.getPath('userData'), 'secrets');
   const secretPath = path.join(secretsDir, fileName);
   fs.mkdirSync(secretsDir, { recursive: true });
+
+  // H4：safeStorage 不可用时 fail-closed——绝不把 JWT/备份密钥明文落盘。
+  // JWT 用会话内随机密钥（重启后需重新登录）；备份密钥不生成（API 缺密钥时
+  // 创建备份会显式拒绝 "Refusing to create plaintext backup"，不会产出无法解密的备份）。
+  if (!safeStorage.isEncryptionAvailable()) {
+    if (!plaintextWarningShown.value) {
+      plaintextWarningShown.value = true;
+      console.warn('safeStorage unavailable; secrets are NOT persisted (session-only)');
+      try {
+        dialog.showMessageBoxSync({
+          type: 'warning',
+          title: '安全存储不可用',
+          message: '系统安全存储（DPAPI）不可用，登录凭据与备份密钥将不会被保存。',
+          detail: '重启应用后需要重新登录，且本次运行无法创建加密备份。请检查系统加密服务后重试。',
+          buttons: ['我知道了'],
+        });
+      } catch {
+        // best effort
+      }
+    }
+    if (fileName === 'backup-key') return undefined;
+    return crypto.randomBytes(48).toString('hex');
+  }
+
   try {
     const existing = fs.readFileSync(secretPath);
-    if (safeStorage.isEncryptionAvailable()) {
-      try {
-        const plain = safeStorage.decryptString(existing);
-        if (plain.length >= 32) return plain;
-      } catch {
-        // 解密失败：可能是 safeStorage 引入前的旧明文文件，也可能是损坏/后端翻转的密文。
-        // 仅当内容是可用明文时才视为旧明文并重新加密；否则删除重新生成——
-        // 把二进制密文当明文回传会让 JWT 密钥含 NUL 字节，spawn 环境校验失败。
-        const plain = existing.toString('utf8').trim();
-        if (isUsablePlainSecret(plain)) {
-          fs.writeFileSync(secretPath, safeStorage.encryptString(plain), { mode: 0o600 });
-          return plain;
-        }
-        console.warn(`secret file ${fileName} is unreadable or corrupt; regenerating`);
-        fs.rmSync(secretPath, { force: true });
-      }
-    } else {
-      const plain = existing.toString('utf8').trim();
+    try {
+      const plain = safeStorage.decryptString(existing);
+      // 与旧明文回退同一套可用性校验：长度 ≥32 且不含控制字符（损坏 DPAPI
+      // blob 解密出控制字符串时拒绝回传，重新生成而非污染密钥）。
       if (isUsablePlainSecret(plain)) return plain;
+      console.warn(`secret file ${fileName} decrypts to an unusable value; regenerating`);
+      fs.rmSync(secretPath, { force: true });
+    } catch {
+      // 解密失败：可能是 safeStorage 引入前的旧明文文件，也可能是损坏/后端翻转的密文。
+      // 仅当内容是可用明文时才视为旧明文并重新加密；否则删除重新生成——
+      // 把二进制密文当明文回传会让 JWT 密钥含 NUL 字节，spawn 环境校验失败。
+      const plain = existing.toString('utf8').trim();
+      if (isUsablePlainSecret(plain)) {
+        fs.writeFileSync(secretPath, safeStorage.encryptString(plain), { mode: 0o600 });
+        return plain;
+      }
       console.warn(`secret file ${fileName} is unreadable or corrupt; regenerating`);
       fs.rmSync(secretPath, { force: true });
     }
@@ -57,9 +81,7 @@ function getOrCreateSecret(fileName = 'jwt-secret') {
     }
   }
   const secret = crypto.randomBytes(48).toString('hex');
-  const encrypted = safeStorage.isEncryptionAvailable();
-  fs.writeFileSync(secretPath, encrypted ? safeStorage.encryptString(secret) : secret, { mode: 0o600 });
-  if (!encrypted) console.warn('safeStorage unavailable; secrets stored in plaintext');
+  fs.writeFileSync(secretPath, safeStorage.encryptString(secret), { mode: 0o600 });
   return secret;
 }
 

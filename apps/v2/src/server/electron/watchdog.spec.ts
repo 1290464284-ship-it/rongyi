@@ -40,6 +40,8 @@ describe('electron watchdog', () => {
     expect(terminateApiSync).toHaveBeenCalledTimes(1);
     expect(relaunch).toHaveBeenCalledWith({ execPath: process.execPath });
     expect(exit).toHaveBeenCalledWith(1);
+    // H2：relaunch 成功后写停止标记，与外部 supervisor 双拉起去重
+    expect(fs.existsSync(stopMarker)).toBe(true);
   });
 
   it('allows up to three relaunches inside the crash window, then writes the stop marker', () => {
@@ -71,7 +73,8 @@ describe('electron watchdog', () => {
 
     expect(mod.relaunchAfterCrash(stopMarker)).toBe(true);
     expect(relaunch).toHaveBeenCalledTimes(1);
-    expect(fs.existsSync(stopMarker)).toBe(false);
+    // H2：窗口过期后允许重启，relaunch 成功后写停止标记与 supervisor 去重
+    expect(fs.existsSync(stopMarker)).toBe(true);
   });
 
   it('returns false without exiting when relaunch itself fails', () => {

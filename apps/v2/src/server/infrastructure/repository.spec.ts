@@ -435,6 +435,10 @@ describe('SqliteRepository', () => {
 
     await expect(repo.findMany({ page: 1, pageSize: 10, filters: { unknownField: 'x' } }, context))
       .rejects.toThrow('Unknown filter field');
+    await expect(repo.findMany({ page: 1, pageSize: 10, filters: { name: { nested: 'x' } } }, context))
+      .rejects.toThrow('Filter value for name must be a scalar');
+    await expect(repo.findMany({ page: 1, pageSize: 10, filters: { name: ['a', 'b'] } }, context))
+      .rejects.toThrow('Filter value for name must be a scalar');
     await expect(repo.update({ id: 'repo-missing-update' }, context))
       .rejects.toThrow('not found');
   });

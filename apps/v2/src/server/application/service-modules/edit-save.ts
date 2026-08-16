@@ -78,6 +78,18 @@ export class EditSaveService {
     if (items.length === 0) throw new ValidationError('治疗计划至少需要一条有效明细');
 
     const now = context.now().toISOString();
+    // S-M7 对齐：存在已划价明细时锁定费用与状态字段（金额凭证防篡改），其余字段（名称/备注等）仍可编辑。
+    const billedItem = this.db.prepare(
+      'SELECT 1 FROM TreatmentPlanItem WHERE planId = ? AND billed = 1 AND deletedAt IS NULL LIMIT 1',
+    ).get(planId);
+    if (billedItem) {
+      const current = this.db.prepare(
+        'SELECT totalFee, status FROM TreatmentPlan WHERE id = ? AND deletedAt IS NULL',
+      ).get(planId) as { totalFee: number; status: string } | undefined;
+      if (!current || Number(current.totalFee) !== input.totalFee || current.status !== input.status) {
+        throw new ConflictError('治疗计划已划价，费用与状态字段不可修改');
+      }
+    }
     this.db.transaction(() => {
       const main = this.db.prepare(
         `UPDATE TreatmentPlan

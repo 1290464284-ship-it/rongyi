@@ -47,11 +47,8 @@ export function createResourceRouter(db: Database.Database): Router {
       return;
     }
     const requiredPermission = RESOURCE_PERMISSION_MAP[resource.name];
-/* v8 ignore next */
     if (requiredPermission && req.context.permissions && !req.context.permissions.includes(requiredPermission)) {
-/* v8 ignore next */
       next(new AppError('FORBIDDEN', `Forbidden resource: ${req.params.resource}`, 403));
-/* v8 ignore next */
       return;
     }
     res.locals.resource = resource;
