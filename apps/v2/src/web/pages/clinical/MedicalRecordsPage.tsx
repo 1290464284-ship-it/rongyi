@@ -149,7 +149,6 @@ export function MedicalRecordsPage() {
       canEdit
       canDelete
       rowActions={(row, ctx) => {
-        staleRef.current = ctx.stale;
         const openEdit = () => {
           /* v8 ignore next -- 本页列表无分页/搜索（queryKey 恒定），stale 恒为 false，守卫为防御冗余 */
           if (ctx.stale) return;
@@ -163,6 +162,7 @@ export function MedicalRecordsPage() {
         };
         return (
           <>
+            <StaleRefSync stale={ctx.stale} onSync={(value) => { staleRef.current = value; }} />
             <ReloadSync reload={ctx.reload} onReload={(reload) => { reloadRef.current = reload; }} />
             <button disabled={ctx.stale} onClick={openEdit}>申请修改</button>
             {String(row.editRequestStatus ?? '') === 'PENDING' && (
@@ -269,5 +269,13 @@ function ReloadSync({
   useEffect(() => {
     onReload(reload);
   }, [reload, onReload]);
+  return null;
+}
+
+// 同 M9 约定：rowActions 渲染期写 staleRef 迁移到 effect，避免反模式回潮。
+function StaleRefSync({ stale, onSync }: { stale: boolean; onSync: (stale: boolean) => void }) {
+  useEffect(() => {
+    onSync(stale);
+  }, [stale, onSync]);
   return null;
 }

@@ -100,6 +100,16 @@ export function AppointmentsPage({ initialSearch }: { initialSearch?: string } =
       });
       showToast('预约已创建', 'success');
       await query.refetch();
+      // 创建成功后清空表单，避免连续创建时残留上一单的患者/医生/椅位/时间。
+      setPatientId('');
+      setTempPatientName('');
+      setTempPatientPhone('');
+      setDoctorId('');
+      setChairId('');
+      setPurpose('');
+      setStartTime('');
+      setEndTime('');
+      setType('REGULAR');
     } catch (error) {
       showToast(errorMessage(error, '创建预约失败'), 'error');
     } finally {

@@ -1,5 +1,3 @@
-export type LookupRow = Record<string, unknown> & { id: string; name?: string };
-
 export type AppointmentRow = Record<string, unknown> & {
   id: string;
   patientId?: string | null;
