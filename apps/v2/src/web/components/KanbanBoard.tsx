@@ -1,6 +1,6 @@
 import { useState, type DragEvent, type KeyboardEvent, type ReactNode } from 'react';
 
-export interface KanbanCard {
+interface KanbanCard {
   id: string;
   title: string;
   subtitle?: string;
