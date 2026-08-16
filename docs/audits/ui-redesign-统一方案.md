@@ -393,14 +393,33 @@
 - 前置条件：Vite dev（5180）+ 模拟库 API（admin `v2-sim-admin-password`；`apps/v2/data/simulated-clinic` 一键复制）。
 - 目录已在 `apps/v2/.gitignore` 忽略（截图不入库，避免仓库膨胀；作为本机固定护栏目录长期保留）。
 
-### 9.2 后续轮次对比方法（R14 闭环）
+### 9.2 本轮逐页对比结果（同会话 before=606c5c2f / after=最终代码，像素级 diff，弱>16/强>48 双阈值）
+
+| 页面 | 差异（强阈值） | 构成判定 |
+|---|---|---|
+| a1-modal-open | 42.7%（全域） | **A1 修复本身**：遮罩从「不盖顶栏+超长」变为完整视口覆盖 |
+| login-light / login-dark | 0.00% / 0.02% | 无改动；暗色仅按钮文字色变（A2，30×11px 区域） |
+| appointments / charges | 3.3-3.6% / 2.7-3.0% | **A4 加载更多按钮改次级样式**（+2px 高度→下方内容整体下移 2px，页高 +2px 印证）+ AA 噪声 |
+| dashboard | 0.5% | B1 状态徽章/行 hover + AA 噪声 |
+| cephalometric | 0.15% | D1 对比选项容器 flex 布局 + AA 噪声 |
+| settings | 0.12% | C6 .page-head 包裹 + AA 噪声 |
+| patients / inventory / medical-records / appointment-board | 0.08-1.4% | **纯 AA 栅格化噪声，无内容变化**（见 9.3 证明） |
+
+### 9.3 关键实验结论（排除全部「幽灵差异」）
+
+1. **A1 fill-mode 去除带来的全局文字栅格化变化**：`animation-fill-mode: both` 残留的 identity transform 使整个内容区成为合成层（灰度 AA）；修复后回到普通栅格化（亚像素 AA）。两者对人眼等价，但像素级 diff 在文本密集页产生 0.1-2% 差异。**证明**：新代码 + 恢复 `both` 重拍 patients → 与 before 差异 **0.008%**；旧 CSS + 新 TSX → 0.008%。即该部分差异全部来自 fill-mode 的栅格化副作用，非任何样式/内容错误。
+2. **侧栏修复再验证**：before（无 .sidebar-group-wrap 规则）vs after（空规则）侧栏区域零差异——空规则与原始块级包裹渲染完全一致；此前 `display: contents` 版本确曾改变分组间距（已修复，见 9.6）。
+3. **跨会话噪声地板**：不同时间启动的浏览器会话之间约 1% 栅格化噪声（同会话自 diff = 0.000%）。护栏规则：**before/after 必须在同一环境会话内成对捕获**（`git checkout <基线提交> -- apps/v2/src/web` → 拍 before → 还原 → 拍 after）。
+4. **审计阈值建议**：强差异（Δ>48/通道）>0.5% 的页面需人工复核 diff 高亮图；0.5% 以下默认为 AA 噪声。
+
+### 9.4 后续轮次对比方法（R14 闭环）
 
 1. 新改动前：`UI_BASELINE_DIR=.../baseline/<轮次>-before` 跑 `shots:ui-baseline` 两次（light/dark）。
 2. 改动后：同目录 `<轮次>-after` 再跑两遍。
 3. 逐对 diff 检查：对齐、留白、层级、一致性、溢出、对比度；弹窗层级可用 `shots:a1-probe` 的 JSON 探针做数值级断言（backdrop rect top=0、祖先链无 transform）。
 4. 每个页面的统一性结论与改动清单回写本文（第 7 章/第 8 章模式）。
 
-### 9.3 本轮逐页结论（52 页口径更新）
+### 9.5 本轮逐页结论（52 页口径更新）
 
 本轮范围内改动页的结论更新（其余页结论维持第四章逐页表）：
 
@@ -415,7 +434,7 @@
 - **System 9 页**：DesktopSettings（C6 .page-head）；GlobalSearch/Backups/SystemOperations 等经全局组件受益；busy 文案类属延后项未动。
 - **Hr 2 页 / Front-desk 1 页**：经全局组件受益（无本轮专项）。
 
-### 9.4 延后项台账（二期）
+### 9.6 延后项台账（二期）
 
 A15（DataTable 真虚拟化）、A17（hub-tabs Unicode 还原）、C 级 busy 文案类（Backups/ChangeOwnPassword/DesktopSettings/Imaging 分类按钮等）、A3/A7/A8/A9/A10/A11 系统性刻度重构（--space-*/--font-size-*/卡片三族/z-index token/硬编码值收编）、A5 剩余部分（看板/时间线/表格双体系合并）、B2 看板键盘拖拽与 ISO 时间、B3 全局搜索 tab 容器与英文列名、B6 医生下拉 6 处错误态、C1 备份内联样式、C4 时间线 ISO 与 busy、C10 静默失败族、C13 导出类 busy、A9 统计卡统一。
 
