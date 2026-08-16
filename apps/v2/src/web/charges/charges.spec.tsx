@@ -177,7 +177,7 @@ describe('QuickChargeDialog', () => {
         onSubmit={vi.fn()}
       />,
     );
-    expect((screen.getByLabelText('快捷收费单价') as HTMLInputElement).value).toBe('100');
+    expect((screen.getByLabelText('快捷收费单价') as HTMLInputElement).value).toBe('¥100.00');
     expect(screen.getByRole('button', { name: '提交中...' })).toBeDefined();
   });
 });

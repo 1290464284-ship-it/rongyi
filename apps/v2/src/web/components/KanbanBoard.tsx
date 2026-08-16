@@ -20,6 +20,7 @@ interface KanbanBoardProps {
 
 export function KanbanBoard({ columns, onChange }: KanbanBoardProps) {
   const [items, setItems] = useState<KanbanColumn[]>(columns);
+  const [liveMessage, setLiveMessage] = useState('');
   const visibleColumns = onChange ? columns : items;
 
   function allowDrop(event: DragEvent<HTMLDivElement>) {
@@ -45,14 +46,19 @@ export function KanbanBoard({ columns, onChange }: KanbanBoardProps) {
     const sourceIndex = visibleColumns.findIndex((column) => column.cards.some((card) => card.id === cardId));
     const targetIndex = sourceIndex + delta;
     if (sourceIndex < 0 || targetIndex < 0 || targetIndex >= visibleColumns.length) return;
-    const next = moveCard(visibleColumns, cardId, visibleColumns[targetIndex].id);
+    const target = visibleColumns[targetIndex];
+    const card = visibleColumns[sourceIndex]?.cards.find((item) => item.id === cardId);
+    const next = moveCard(visibleColumns, cardId, target.id);
     if (!next) return;
+    // 键盘移动播报（aria-live），供屏幕阅读器用户感知移动结果
+    setLiveMessage(`卡片「${card?.title ?? cardId}」已移至「${target.title}」`);
     if (onChange) onChange(next);
     else setItems(next);
   }
 
   return (
-    <div className="ui-kanban">
+    <>
+      <div className="ui-kanban">
       {visibleColumns.map((column) => (
         <div
           key={column.id}
@@ -90,7 +96,9 @@ export function KanbanBoard({ columns, onChange }: KanbanBoardProps) {
           ))}
         </div>
       ))}
-    </div>
+      </div>
+      <span className="visually-hidden" aria-live="polite">{liveMessage}</span>
+    </>
   );
 }
 

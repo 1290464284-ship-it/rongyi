@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useCrudResource, type CrudResourceOptions } from '../hooks/use-crud-resource';
 import { ConfirmDialog, DataTable, Dialog, EmptyState, LoadingState, PageError, PagePager, SearchInput, type DataTableColumn } from '.';
 
@@ -53,6 +53,8 @@ export interface CrudPageProps<
   deleteTitle?: string;
   /** page-head 追加按钮（导出等）。 */
   extraHeaderActions?: ReactNode;
+  /** 渲染上下文变化回调（effect 期触发，一次渲染仅一次）：供页面侧安全捕获 stale/reload，替代每行实例化捕获组件 */
+  onContextChange?: (ctx: CrudRenderContext<TForm>) => void;
   /** 必填：Dialog 内表单体（含字段控件；提交/取消按钮由 CrudPage 提供）。 */
   renderForm: (ctx: CrudRenderContext<TForm>) => ReactNode;
 }
@@ -70,6 +72,11 @@ export function CrudPage<
   });
   const isStale = crud.isStale;
   const { query, rows, searchInput, setSearch, page, setPage, showForm, editing, form, updateForm, reload } = crud;
+  const ctx: CrudRenderContext<TForm> = { form, update: updateForm, editing, stale: isStale, reload };
+  // 渲染上下文在 effect 期通知页面（一次渲染仅一次），替代行内每行实例化的捕获组件
+  useEffect(() => {
+    props.onContextChange?.(ctx);
+  });
   // Dialog key：每次打开表单递增，强制重挂载，取消动画期间再次打开时清掉迟到的关闭定时器
   const [dialogEpoch, setDialogEpoch] = useState(0);
   function openCreate() {
@@ -88,7 +95,6 @@ export function CrudPage<
   if (query.isLoading) return <LoadingState />;
   if (query.error) return <PageError message={(query.error as Error).message} />;
 
-  const ctx: CrudRenderContext<TForm> = { form, update: updateForm, editing, stale: isStale, reload };
   const hasRowActions = Boolean(props.rowActions) || props.canEdit || props.canDelete;
   const title = typeof props.dialogTitle === 'function'
     ? props.dialogTitle(editing)

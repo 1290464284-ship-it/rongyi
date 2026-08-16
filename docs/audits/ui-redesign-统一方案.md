@@ -493,6 +493,29 @@ A15（DataTable 真虚拟化）、A17（hub-tabs Unicode 还原）、C 级 busy 
 - 52 页逐页结论更新：本轮各模块经 B6/A5 合并/A7-A11 token 受益；第四章逐页表 + 9.5 节 + 10.1 合并构成完整结论。
 - **B6 收尾扩展**（609985b4）：医生下拉错误态补齐全部 10 处（原 6 处 + TriageDialog/RecordFormFields/ProcessingOrderFormFields/AppointmentsPage 双表单），全库 doctors 查询零静默失败。
 - **smoke 链（2026-08-16）**：`smoke:api` ✅（110 资源全链路）、`smoke:ui` ✅（9 模块路由导航全过）、`smoke:delivery` ✅ **ALL_DELIVERY_SMOKES_PASSED**（API/UI/load/state-machine concurrency，含加工结算 409 并发断言）。
-- 遗留待办（非审计项，可选）：QuickChargeDialog 单价 formatMoney、ReloadSync 每行实例化、看板 aria-live 播报微调、阶段 5 桌面端细节（1280×800/1920×1080 多视口截图、滚动条暗色样式、打印视图实测）——均不阻塞交付。
+- 遗留待办（非审计项，可选）：QuickChargeDialog 单价 formatMoney、ReloadSync 每行实例化、看板 aria-live 播报微调、阶段 5 桌面端细节——**全部已在第十一章收尾完成**。
+
+---
+
+## 十一、阶段 5 桌面端细节与锦上添花收尾（提示词全部兑现）
+
+### 11.1 阶段 5 验证结果（scripts/ui-viewport-check.mjs，shots:ui-viewport）
+
+- **窗口缩放**：1280×800 / 1920×1080 × DPR 1/1.5 共 4 组视口 × 5 关键页（Dashboard/Patients/Appointments/Charges/MedicalRecords）= 20 项检查，**水平溢出 0 例**（scrollWidth == clientWidth 全过），截图存 `test-results/ui-baseline/viewports/`。
+- **滚动条统一**：新增 `::-webkit-scrollbar` 细轨（10px）+ `--border-strong` 圆角拇指（Chromium/Electron 生效）+ Firefox `scrollbar-width: thin / scrollbar-color` 双轨；拇指/悬停色全部走 token，暗色主题自动适配。
+- **打印/PDF 视图**：`@media print` 实测（收费页）——`.page-head` 与 `.sidebar` 均 `display:none`、`.content` padding 归零，打印容器干净；截图 `charges-print-media.png`。
+- **中文字体回退链**：20 项检查实测 computed font-family 均为 `"Segoe UI", "Microsoft YaHei", system-ui, sans-serif` 且页面含中文文本（hasCjkText=true），与 `--font` 声明一致。
+
+### 11.2 锦上添花收尾
+
+- QuickChargeDialog 单价改走 `formatMoney`（`12.5` → `¥12.50`，与全站金额口径一致；同步更新两处 spec 断言）。
+- MemberCardsPage 去掉每行实例化的 ReloadSync 捕获组件：CrudPage 新增 `onContextChange`（effect 期、一次渲染仅一次），页面改用它捕获 stale/reload，ReloadSync 组件删除。
+- KanbanBoard 键盘移动增加 `aria-live="polite"` 播报（「卡片「X」已移至「Y」」），屏幕阅读器可感知移动结果。
+
+### 11.3 最终门禁（全绿）
+
+`test` 298 文件 / **3267 用例** ✅；typecheck / lint / knip ✅；多视口+打印+字体检查 21 项 ✅。
+
+**至此原提示词阶段 0-7 全部完成**：审计清单（阶段0-1）→ 设计方向（2）→ token 方案（3）→ 交互一致性（4，经 A4/A13/C13 等）→ 桌面端细节（5）→ 实施（6，两轮 15 个提交）→ 视觉验证与护栏（7，同会话截图对比 + R14 基线目录）。
 
 

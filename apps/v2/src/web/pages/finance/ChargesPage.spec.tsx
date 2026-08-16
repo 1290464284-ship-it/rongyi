@@ -475,7 +475,7 @@ describe('ChargesPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '快捷划价 初诊检查' }));
     expect(await screen.findByText('快捷收费')).toBeDefined();
     expect((screen.getByLabelText('快捷收费项目名') as HTMLInputElement).value).toBe('初诊检查');
-    expect((screen.getByLabelText('快捷收费单价') as HTMLInputElement).value).toBe('30');
+    expect((screen.getByLabelText('快捷收费单价') as HTMLInputElement).value).toBe('¥30.00');
 
     fireEvent.change(screen.getByLabelText('快捷收费数量'), { target: { value: '2' } });
     await waitFor(() => {
