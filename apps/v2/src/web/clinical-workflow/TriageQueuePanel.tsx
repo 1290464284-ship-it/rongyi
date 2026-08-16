@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../lib/api';
+import { LoadingState } from '../components';
 import { formatDateTime } from '../lib/format';
 import type { Page } from '../lib/types';
 import { STATUS_LABELS } from './types';
@@ -18,13 +19,20 @@ export function TriageQueuePanel({ onStartVisit }: { onStartVisit: (id: string) 
         departmentId ? `/triage/queue?departmentId=${encodeURIComponent(departmentId)}` : '/triage/queue',
       ),
   });
-  if (queue.isLoading) return null;
+  if (queue.isLoading) {
+    return (
+      <section className="triage-queue">
+        <h2>分诊队列</h2>
+        <LoadingState />
+      </section>
+    );
+  }
   if (queue.error) {
     return (
       <section className="triage-queue">
         <h2>分诊队列</h2>
         <p className="error">加载分诊队列失败</p>
-        <button type="button" onClick={() => void queue.refetch()}>重试</button>
+        <button type="button" className="btn-secondary" onClick={() => void queue.refetch()}>重试</button>
       </section>
     );
   }

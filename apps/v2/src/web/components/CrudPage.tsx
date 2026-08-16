@@ -151,7 +151,7 @@ export function CrudPage<
         <form onSubmit={crud.submit}>
           {props.renderForm(ctx)}
           <div className="modal-actions">
-            <button type="button" onClick={closeForm}>取消</button>
+            <button type="button" className="btn-secondary" onClick={closeForm}>取消</button>
             <button type="submit" disabled={crud.submitting}>{crud.submitting ? '保存中...' : '保存'}</button>
           </div>
         </form>

@@ -44,28 +44,28 @@ describe('Dialog', () => {
       </Dialog>,
     );
     const modal = document.querySelector('.modal') as HTMLElement;
-    const first = screen.getByRole('button', { name: 'first' });
+    const close = screen.getByRole('button', { name: '关闭弹窗' });
     const last = screen.getByRole('button', { name: 'last' });
+    // 打开后初始焦点落在头部关闭按钮（第一个可聚焦元素）
+    expect(document.activeElement).toBe(close);
     last.focus();
     fireEvent.keyDown(modal, { key: 'Tab' });
-    expect(document.activeElement).toBe(first);
+    expect(document.activeElement).toBe(close);
     fireEvent.keyDown(modal, { key: 'Tab', shiftKey: true });
     expect(document.activeElement).toBe(last);
 
     (document.activeElement as HTMLElement).blur();
     fireEvent.keyDown(modal, { key: 'Tab' });
-    expect(document.activeElement).toBe(first);
+    expect(document.activeElement).toBe(close);
   });
 
-  it('keeps focus on the dialog when there are no focusable children', () => {
+  it('focuses the header close button when there are no other focusable children', () => {
     render(
       <Dialog open title="T" onClose={vi.fn()}>
         <p>only text</p>
       </Dialog>,
     );
-    const modal = document.querySelector('.modal') as HTMLElement;
-    fireEvent.keyDown(modal, { key: 'Tab' });
-    expect(document.activeElement).toBe(modal);
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: '关闭弹窗' }));
   });
 
   it('marks background siblings inert while open and restores them on close', () => {

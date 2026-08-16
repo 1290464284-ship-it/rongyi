@@ -2,7 +2,7 @@ import { useRef, useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest, uploadFile } from '../../lib/api';
 import { CrudPage } from '../../components/CrudPage';
-import { ConfirmDialog, DataTable, MissingSelectOption, SignedImage } from '../../components';
+import { ConfirmDialog, DataTable, LoadingState, MissingSelectOption, SignedImage } from '../../components';
 import { errorMessage } from '../../lib/messages';
 import { useToast } from '../../lib/toast-context';
 import type { Page } from '../../lib/types';
@@ -33,7 +33,10 @@ export function ImagingPage() {
     queryFn: () => apiRequest<Page<ImagingCategoryRow>>(CATEGORIES_LIST_PATH),
   });
   const compareOptionsQuery = useQuery({
-    queryKey: ['imaging-options', compareSearch, comparePage],
+    // B5：初始态（无搜索、第 1 页）与 CrudPage 列表同 URL，复用其 queryKey 共享缓存，消除同端点双请求
+    queryKey: compareSearch === '' && comparePage === 1
+      ? ['imaging', 1, '']
+      : ['imaging-options', compareSearch, comparePage],
     queryFn: () => apiRequest<Page<ImagingRow>>(
       `/resources/imaging?page=${comparePage}&pageSize=50${compareSearch ? `&search=${encodeURIComponent(compareSearch)}` : ''}`,
     ),
@@ -246,7 +249,16 @@ export function ImagingPage() {
 
       <section className="card" aria-label="影像分类管理">
         <h2>影像分类管理</h2>
-        <DataTable columns={categoryColumnDefs} rows={categoryOptions} keyField="id" emptyText="暂无影像分类" />
+        {categories.isLoading ? (
+          <LoadingState label="影像分类加载中..." />
+        ) : categories.error ? (
+          <div className="query-section-error">
+            <p className="error">影像分类加载失败</p>
+            <button type="button" className="btn-secondary" onClick={() => void categories.refetch()}>重试</button>
+          </div>
+        ) : (
+          <DataTable columns={categoryColumnDefs} rows={categoryOptions} keyField="id" emptyText="暂无影像分类" />
+        )}
         <form className="imaging-category-form" onSubmit={saveCategory}>
           <label>
             名称
@@ -328,42 +340,51 @@ export function ImagingPage() {
             </div>
           )}
         </div>
-        <div className="imaging-compare-controls">
-          <label>
-            影像一
-            <select value={compareLeftId} onChange={(event) => selectCompare('left', event.target.value)}>
-              {compareLeftId !== '' && !imagingOptions.some((row) => String(row.id) === compareLeftId) && (
-                <MissingSelectOption value={compareLeftId} label={missingSelectLabel(selectedLeft, compareLeftId)} />
-              )}
-              <option value="">选择影像</option>
-              {imagingOptions.map((row) => (
-                <option key={row.id} value={row.id}>{imagingOptionLabel(row)}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            影像二
-            <select value={compareRightId} onChange={(event) => selectCompare('right', event.target.value)}>
-              {compareRightId !== '' && !imagingOptions.some((row) => String(row.id) === compareRightId) && (
-                <MissingSelectOption value={compareRightId} label={missingSelectLabel(selectedRight, compareRightId)} />
-              )}
-              <option value="">选择影像</option>
-              {imagingOptions.map((row) => (
-                <option key={row.id} value={row.id}>{imagingOptionLabel(row)}</option>
-              ))}
-            </select>
-          </label>
-          <button type="button" onClick={() => {
-            setSelectedRows((current) => {
-              const next = { ...current };
-              delete next[compareLeftId];
-              delete next[compareRightId];
-              return next;
-            });
-            setCompareLeftId('');
-            setCompareRightId('');
-          }}>清空对比</button>
-        </div>
+        {compareOptionsQuery.isLoading ? (
+          <LoadingState label="对比选项加载中..." />
+        ) : compareOptionsQuery.error ? (
+          <div className="query-section-error">
+            <p className="error">对比选项加载失败</p>
+            <button type="button" className="btn-secondary" onClick={() => void compareOptionsQuery.refetch()}>重试</button>
+          </div>
+        ) : (
+          <div className="imaging-compare-controls">
+            <label>
+              影像一
+              <select value={compareLeftId} onChange={(event) => selectCompare('left', event.target.value)}>
+                {compareLeftId !== '' && !imagingOptions.some((row) => String(row.id) === compareLeftId) && (
+                  <MissingSelectOption value={compareLeftId} label={missingSelectLabel(selectedLeft, compareLeftId)} />
+                )}
+                <option value="">选择影像</option>
+                {imagingOptions.map((row) => (
+                  <option key={row.id} value={row.id}>{imagingOptionLabel(row)}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              影像二
+              <select value={compareRightId} onChange={(event) => selectCompare('right', event.target.value)}>
+                {compareRightId !== '' && !imagingOptions.some((row) => String(row.id) === compareRightId) && (
+                  <MissingSelectOption value={compareRightId} label={missingSelectLabel(selectedRight, compareRightId)} />
+                )}
+                <option value="">选择影像</option>
+                {imagingOptions.map((row) => (
+                  <option key={row.id} value={row.id}>{imagingOptionLabel(row)}</option>
+                ))}
+              </select>
+            </label>
+            <button type="button" onClick={() => {
+              setSelectedRows((current) => {
+                const next = { ...current };
+                delete next[compareLeftId];
+                delete next[compareRightId];
+                return next;
+              });
+              setCompareLeftId('');
+              setCompareRightId('');
+            }}>清空对比</button>
+          </div>
+        )}
         {canCompare ? (
           <div className="imaging-compare-view">
             <figure className="imaging-compare-item">

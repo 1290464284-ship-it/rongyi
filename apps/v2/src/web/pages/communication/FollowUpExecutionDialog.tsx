@@ -80,7 +80,7 @@ export function FollowUpExecutionDialog({
           />
         </label>
         <div className="modal-actions">
-          <button type="button" onClick={onClose} disabled={busy}>取消</button>
+          <button type="button" className="btn-secondary" onClick={onClose} disabled={busy}>取消</button>
           <button type="submit" disabled={busy}>{busy ? '提交中...' : '确认执行'}</button>
         </div>
       </form>

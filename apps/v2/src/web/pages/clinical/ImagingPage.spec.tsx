@@ -922,7 +922,10 @@ describe('ImagingPage', () => {
       return {};
     });
     render(<ImagingPage />, { wrapper });
-    await screen.findByText('全景片');
+    // 列表与对比选项共享缓存（B5），「全景片」同时出现在列表单元格与对比下拉，断言改为计数
+    await waitFor(() => {
+      expect(screen.getAllByText('全景片').length).toBeGreaterThan(0);
+    });
     const compareSection = screen.getByLabelText('影像对比');
     fireEvent.change(within(compareSection).getByLabelText('影像一'), { target: { value: 'i-1' } });
     // 翻到第 2 页：i-1 不在当前选项页，但保留在 selectedRows
@@ -986,7 +989,10 @@ describe('ImagingPage', () => {
       return {};
     });
     render(<ImagingPage />, { wrapper });
-    await screen.findByText('NullImg');
+    // 列表与对比选项共享缓存（B5），「NullImg」同时出现在列表单元格与对比下拉，断言改为计数
+    await waitFor(() => {
+      expect(screen.getAllByText('NullImg').length).toBeGreaterThan(0);
+    });
     fireEvent.click(screen.getByRole('button', { name: '编辑' }));
     await waitFor(() => {
       expect((screen.getByLabelText('标题') as HTMLInputElement).value).toBe('NullImg');

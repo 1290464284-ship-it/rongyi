@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../lib/api';
-import { Dialog } from '../components';
+import { Dialog, LoadingState } from '../components';
 import { errorMessage } from '../lib/messages';
 import { useToast } from '../lib/toast-context';
 import { COLOR_OPTIONS, DEFAULT_LINE_COLOR, DEFAULT_OUTLINE_COLOR, DEFAULT_REPORT_JSON } from './constants';
@@ -86,7 +86,7 @@ export function ReportDialog({
   return (
     <Dialog open title="测量报告" onClose={onClose}>
       {reportQuery.isLoading ? (
-        <p>加载中...</p>
+        <LoadingState />
       ) : (
         <form onSubmit={(event) => { event.preventDefault(); void handleSave(); }}>
           <label>

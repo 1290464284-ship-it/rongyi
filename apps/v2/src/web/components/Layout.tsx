@@ -26,6 +26,7 @@ import { Tooltip } from './Tooltip';
 import { GlobalSearchForm } from './GlobalSearchForm';
 import { BackupStatusCard } from './BackupStatusCard';
 import { HelpDialogs } from './HelpDialogs';
+import { LoadingState } from './status';
 
 interface NavItem {
   key: string;
@@ -164,7 +165,7 @@ export function Layout() {
     setGlobalSearch('');
   }
 
-  if (navigation.isLoading) return <div className="page">加载中...</div>;
+  if (navigation.isLoading) return <div className="page"><LoadingState /></div>;
   if (navigation.error) {
     return (
       <div className="page">
@@ -173,7 +174,7 @@ export function Layout() {
       </div>
     );
   }
-  if (resourceName !== null && resourceMeta.isLoading) return <div className="page">加载中...</div>;
+  if (resourceName !== null && resourceMeta.isLoading) return <div className="page"><LoadingState /></div>;
   if (resourceName !== null && resourceMeta.error) {
     return (
       <div className="page">

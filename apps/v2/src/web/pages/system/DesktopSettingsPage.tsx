@@ -173,7 +173,7 @@ export function DesktopSettingsPage() {
 
   return (
     <div className="page">
-      <h1>桌面端设置</h1>
+      <div className="page-head"><h1>桌面端设置</h1></div>
       <div className="cards">
         <div className="card"><strong>API 端口</strong><span>{apiPort ?? '未知'}</span></div>
         <div className="card"><strong>开机自启</strong><span>{autoLaunch === null ? '未知' : autoLaunch ? '已开启' : '已关闭'}</span></div>

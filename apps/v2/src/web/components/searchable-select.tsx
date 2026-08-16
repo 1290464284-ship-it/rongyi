@@ -127,7 +127,7 @@ export function SearchableSelect({
       {canLoadMore && (loadCapped ? (
         <span className="searchable-select-cap">数据较多，仅展示前 {loaded.length} 条，请使用搜索筛选</span>
       ) : (
-        <button type="button" disabled={query.isFetching} onClick={() => setPage((current) => current + 1)}>
+        <button type="button" className="btn-secondary" disabled={query.isFetching} onClick={() => setPage((current) => current + 1)}>
           加载更多（已加载 {loaded.length} 条）
         </button>
       ))}

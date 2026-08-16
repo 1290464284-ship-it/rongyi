@@ -24,6 +24,9 @@ export function AnalyticsDashboardPage() {
   const [appliedEnd, setAppliedEnd] = useState(today());
   const [printing, setPrinting] = useState(false);
   const printingRef = useRef(false);
+  // C7：导出 CSV 双击防重（同步导出完成瞬间按钮已复位，冷却窗口内拦截第二次点击）
+  const [exporting, setExporting] = useState(false);
+  const exportingRef = useRef(false);
 
   const queryParams = new URLSearchParams();
   if (appliedStart) queryParams.set('startDate', `${appliedStart}T00:00:00.000Z`);
@@ -69,8 +72,7 @@ export function AnalyticsDashboardPage() {
     setAppliedEnd(endDate);
   }
 
-  function exportCsv(): void {
-    const sections: Array<{ title: string; rows: ChartRow[]; columns: Array<{ key: string; label: string }> }> = [
+  function exportCsv(): void {    const sections: Array<{ title: string; rows: ChartRow[]; columns: Array<{ key: string; label: string }> }> = [
       {
         title: '月度收入',
         rows: revenue.data ?? [],
@@ -128,6 +130,21 @@ export function AnalyticsDashboardPage() {
     }
     downloadTextFile(`经营分析-${appliedStart}-${appliedEnd}.csv`, lines.join('\n'));
     showToast('经营分析已导出为 CSV，可直接用 Excel 打开', 'success');
+  }
+
+  function handleExportCsv(): void {
+    /* v8 ignore next -- 导出按钮在冷却窗口内 disabled，重复点击不可达 */
+    if (exportingRef.current) return;
+    exportingRef.current = true;
+    setExporting(true);
+    try {
+      exportCsv();
+    } finally {
+      window.setTimeout(() => {
+        exportingRef.current = false;
+        setExporting(false);
+      }, 800);
+    }
   }
 
   async function printReport(): Promise<void> {
@@ -188,7 +205,7 @@ export function AnalyticsDashboardPage() {
             <input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} />
           </label>
           <button onClick={applyDates}>应用日期</button>
-          <button onClick={exportCsv}>导出 CSV</button>
+          <button disabled={exporting} onClick={handleExportCsv}>导出 CSV</button>
           <button disabled={printing} onClick={() => void printReport()}>{printing ? '打开中...' : '打印/PDF'}</button>
         </div>
       </div>
@@ -254,7 +271,11 @@ export function AnalyticsDashboardPage() {
             <div className="analytics-panel">
               <h2>患者增长</h2>
               {data?.length ? (
-                <div className="bar-chart compact">
+                <div
+                  className="bar-chart compact"
+                  role="img"
+                  aria-label={`患者增长：${data.slice(-60).map((row) => `${String(row.day ?? '')} ${Number(row.count ?? 0)} 人`).join('；')}`}
+                >
                   {data.slice(-60).map((row) => (
                     <div className="bar-row" key={String(row.day)}>
                       <span className="bar-label">{String(row.day ?? '')}</span>
@@ -282,7 +303,11 @@ export function AnalyticsDashboardPage() {
             <div className="analytics-panel">
               <h2>库存分类</h2>
               {data?.length ? (
-                <div className="bar-chart compact">
+                <div
+                  className="bar-chart compact"
+                  role="img"
+                  aria-label={`库存分类：${data.map((row) => `${String(row.category ?? '未分类')} 库存 ${Number(row.totalStock ?? 0)}`).join('；')}`}
+                >
                   {data.map((row) => (
                     <div className="bar-row" key={String(row.category)}>
                       <span className="bar-label">{String(row.category ?? '未分类')}</span>
@@ -310,7 +335,11 @@ export function AnalyticsDashboardPage() {
             <div className="analytics-panel">
               <h2>满意度趋势</h2>
               {data?.length ? (
-                <div className="bar-chart compact">
+                <div
+                  className="bar-chart compact"
+                  role="img"
+                  aria-label={`满意度趋势：${data.slice(-60).map((row) => `${String(row.surveyDate ?? '')} ${Number(row.avgScore ?? 0)} 分`).join('；')}`}
+                >
                   {data.slice(-60).map((row) => (
                     <div className="bar-row" key={String(row.surveyDate)}>
                       <span className="bar-label">{String(row.surveyDate ?? '')}</span>
@@ -338,7 +367,11 @@ export function AnalyticsDashboardPage() {
             <div className="analytics-panel wide">
               <h2>医生绩效与满意度</h2>
               {data?.length ? (
-                <div className="bar-chart">
+                <div
+                  className="bar-chart"
+                  role="img"
+                  aria-label={`医生绩效：${data.map((row) => `${String(row.doctorName ?? '未分配')} ${Number(row.avgScore ?? 0)} 分`).join('；')}`}
+                >
                   {data.map((row, index) => (
                     <div className="bar-row" key={String(row.doctorId ?? `row-${index}`)}>
                       <span className="bar-label">{String(row.doctorName ?? '未分配')}</span>

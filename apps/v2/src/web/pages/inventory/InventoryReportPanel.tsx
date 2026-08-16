@@ -21,6 +21,8 @@ export function InventoryReportPanel() {
         `/inventory-reports/${reportType}${queryString ? `?${queryString}` : ''}`,
       );
     },
+    // C2：refetch 期间延续旧数据，避免整表被 LoadingState 替换闪烁
+    placeholderData: (previous) => previous,
   });
 
   return (
@@ -35,11 +37,11 @@ export function InventoryReportPanel() {
         <input aria-label="报表开始日期" type="date" value={reportFrom} onChange={(event) => setReportFrom(event.target.value)} />
         <input aria-label="报表结束日期" type="date" value={reportTo} onChange={(event) => setReportTo(event.target.value)} />
       </div>
-      {(report.isLoading || report.isFetching) && <LoadingState label="报表加载中..." />}
+      {(report.isLoading || report.isFetching) && !report.data && <LoadingState label="报表加载中..." />}
       {!report.isFetching && report.error && (
         <>
           <PageError message={report.error instanceof Error ? report.error.message : String(report.error)} />
-          <button onClick={() => void report.refetch()}>重试</button>
+          <button type="button" className="btn-secondary" onClick={() => void report.refetch()}>重试</button>
         </>
       )}
       {!report.isFetching && report.data && (

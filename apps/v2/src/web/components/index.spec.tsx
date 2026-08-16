@@ -259,8 +259,8 @@ describe('shared web components', () => {
     const opener = screen.getByText('打开');
     opener.focus();
     fireEvent.click(opener);
-    // 打开后焦点移入弹窗
-    expect(document.activeElement).toBe(screen.getByText('弹窗内按钮'));
+    // 打开后焦点移入弹窗（头部关闭按钮为第一个可聚焦元素）
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: '关闭弹窗' }));
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
     // 关闭动画 120ms 播放完成后才移除并还原焦点
     act(() => vi.advanceTimersByTime(150));
@@ -281,21 +281,21 @@ describe('shared web components', () => {
         </Dialog>
       </div>,
     );
-    expect(document.activeElement).toBe(screen.getByText('第一个'));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: '关闭弹窗' }));
 
-    // Tab 在最后一个可聚焦元素上循环回第一个
+    // Tab 在最后一个可聚焦元素上循环回第一个（头部关闭按钮）
     screen.getByText('第二个').focus();
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Tab' });
-    expect(document.activeElement).toBe(screen.getByText('第一个'));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: '关闭弹窗' }));
 
     // Shift+Tab 从第一个循环到最后一个
-    screen.getByText('第一个').focus();
+    screen.getByRole('button', { name: '关闭弹窗' }).focus();
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Tab', shiftKey: true });
     expect(document.activeElement).toBe(screen.getByText('第二个'));
 
     // 焦点逃逸到弹窗外时，Tab 拉回弹窗内
     (document.querySelector('.modal-backdrop') as HTMLElement)?.focus?.();
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Tab' });
-    expect(document.activeElement).toBe(screen.getByText('第一个'));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: '关闭弹窗' }));
   });
 });

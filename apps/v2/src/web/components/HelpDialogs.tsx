@@ -25,8 +25,8 @@ export function HelpDialogs({
           <li>Esc：关闭弹窗</li>
         </ul>
         <div className="modal-actions">
-          <button type="button" onClick={onReopenOnboarding}>重新查看新手引导</button>
-          <button type="button" onClick={onCloseHelp}>关闭</button>
+          <button type="button" className="btn-secondary" onClick={onReopenOnboarding}>重新查看新手引导</button>
+          <button type="button" className="btn-secondary" onClick={onCloseHelp}>关闭</button>
         </div>
       </Dialog>
       <Dialog open={showOnboarding} title="新手引导" onClose={onCloseOnboarding}>

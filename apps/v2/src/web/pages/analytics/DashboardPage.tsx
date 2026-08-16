@@ -3,7 +3,7 @@ import { Link } from 'react-router';
 import { CalendarDays, Clock, Package, PhoneCall, Stethoscope, Users, Wallet } from 'lucide-react';
 import { apiRequest } from '../../lib/api';
 import { formatMoney } from '../../lib/format';
-import { QueryBoundary } from '../../components';
+import { LoadingState, QueryBoundary } from '../../components';
 import { APPOINTMENT_STATUS_LABELS, APPOINTMENT_TYPE_LABELS } from '../../lib/labels';
 
 interface DashboardData {
@@ -42,12 +42,30 @@ export function DashboardPage() {
 
   return (
     <QueryBoundary isLoading={isLoading} error={error} data={data} errorLabel="无法加载工作台数据">
-      <DashboardContent data={data!} workbench={workbench.data} workbenchLoading={workbench.isLoading} />
+      <DashboardContent
+        data={data!}
+        workbench={workbench.data}
+        workbenchLoading={workbench.isLoading}
+        workbenchError={workbench.error}
+        onRetryWorkbench={() => void workbench.refetch()}
+      />
     </QueryBoundary>
   );
 }
 
-function DashboardContent({ data, workbench, workbenchLoading }: { data: DashboardData; workbench?: WorkbenchData; workbenchLoading: boolean }) {
+function DashboardContent({
+  data,
+  workbench,
+  workbenchLoading,
+  workbenchError,
+  onRetryWorkbench,
+}: {
+  data: DashboardData;
+  workbench?: WorkbenchData;
+  workbenchLoading: boolean;
+  workbenchError: unknown;
+  onRetryWorkbench: () => void;
+}) {
   const appointments = Array.isArray(workbench?.appointments) ? workbench.appointments : [];
   const stats = [
     { label: '患者数', value: String(data.patients), icon: Users },
@@ -108,7 +126,12 @@ function DashboardContent({ data, workbench, workbenchLoading }: { data: Dashboa
         </div>
         <div className="appointment-scroll">
           {workbenchLoading ? (
-            <div className="table-empty">加载中...</div>
+            <LoadingState />
+          ) : workbenchError ? (
+            <div className="query-section-error">
+              <p className="error">今日预约加载失败</p>
+              <button type="button" className="btn-secondary" onClick={onRetryWorkbench}>重试</button>
+            </div>
           ) : appointments.length === 0 ? (
             <div className="table-empty">今日暂无预约</div>
           ) : (

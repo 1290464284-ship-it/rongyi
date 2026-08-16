@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../lib/api';
-import { DentalChart, Dialog } from '../components';
+import { DentalChart, Dialog, LoadingState } from '../components';
 import { errorMessage } from '../lib/messages';
 import { useToast } from '../lib/toast-context';
 import type { Page } from '../lib/types';
@@ -88,7 +88,7 @@ export function TeethMarkDialog({
   return (
     <Dialog open title="主诉牙齿标记" onClose={onClose}>
       {teethQuery.isLoading ? (
-        <p>加载中...</p>
+        <LoadingState />
       ) : teeth.length === 0 ? (
         <p>该首诊暂无牙齿记录</p>
       ) : (

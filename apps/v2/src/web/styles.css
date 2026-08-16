@@ -48,6 +48,12 @@
   --login-card-shadow: 0 12px 32px rgba(13, 130, 130, 0.1);
   --btn-login-shadow: 0 4px 12px rgba(14, 138, 138, 0.28);
 
+  /* A2：主色底上的文字。亮色白字 on #0D8282 = 4.63:1 达标；
+     暗色主色提亮为 #14A0A0 后白字仅 3.19:1 不达 AA，改用深青字（≈5.9:1） */
+  --on-primary: #FFFFFF;
+  /* A12：条码条色。条码底恒白（打印语义），条恒深青保证两主题可读 */
+  --barcode-ink: #16303A;
+
   /* 图表系列色 */
   --chart-purple: #7C3AED;
   --chart-1: #2563eb;
@@ -133,6 +139,8 @@
     --login-card-border: rgba(20, 160, 160, 0.35);
     --login-card-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
     --btn-login-shadow: 0 4px 12px rgba(20, 160, 160, 0.35);
+    /* A2：暗色主色底上改用深青字（#0C171A on #14A0A0 ≈ 5.9:1） */
+    --on-primary: #0C171A;
 
     /* 图表系列色 */
     --chart-purple: #A78BFA;
@@ -543,7 +551,11 @@ a {
 }
 
 .content > * {
-  animation: pageRise 200ms var(--ease) both;
+  /* A1：不使用 fill-mode both——fill 会把终态 transform 永久残留（即使终态写 none，
+     keyframe 内也会被归一化为 identity 矩阵），使 .page/.hub 成为 stacking context，
+     把弹窗遮罩（position:fixed）困进页面内：遮罩不盖顶栏且高度盖满整段滚动内容。
+     动画结束后自然回到基础样式（无 transform），不再产生 containing block。 */
+  animation: pageRise 200ms var(--ease);
 }
 
 @keyframes pageRise {
@@ -586,7 +598,7 @@ a {
 
 .barcode-svg {
   display: block;
-  color: var(--text);
+  color: var(--barcode-ink);
   background: #fff;
 }
 
@@ -1071,6 +1083,13 @@ small {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 10px 12px;
+  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+
+/* B1：今日预约行补 hover 态（teal 浅底 + 主色描边） */
+.appointment-row:hover {
+  background: var(--soft);
+  border-color: var(--primary);
 }
 
 .appointment-time {
@@ -1605,7 +1624,7 @@ small {
   border: 0;
   border-radius: var(--radius-sm);
   background: var(--primary);
-  color: #fff;
+  color: var(--on-primary);
   font: inherit;
   font-size: 14px;
   font-weight: 600;
@@ -1697,7 +1716,7 @@ textarea {
 
 button {
   background: var(--primary);
-  color: white;
+  color: var(--on-primary);
   border: 0;
   cursor: pointer;
 }
@@ -1799,6 +1818,7 @@ select.error:focus {
 
 .toast.info {
   background: var(--primary);
+  color: var(--on-primary);
 }
 
 .toast.leaving {
@@ -1936,14 +1956,7 @@ tbody tr:hover {
   flex-wrap: wrap;
 }
 
-.reminder-head .tag {
-  font-size: 12px;
-  padding: 2px 10px;
-  border-radius: var(--radius-xs);
-  background: var(--soft);
-  color: var(--primary);
-}
-
+/* A16：.tag 样式收敛到全局基类（.tag），此处只保留语义色变体 */
 .reminder-head .tag.recall {
   background: var(--success-soft);
   color: var(--success);
@@ -2004,13 +2017,7 @@ tbody tr:hover {
   flex-wrap: wrap;
 }
 
-.wechat-template-head .tag {
-  font-size: 12px;
-  padding: 2px 8px;
-  border-radius: var(--radius-xs);
-  background: var(--soft);
-  color: var(--primary);
-}
+/* A16：.tag 样式收敛到全局基类（.tag） */
 
 .wechat-template-content {
   margin: 0 0 8px;
@@ -2073,6 +2080,105 @@ tbody tr:hover {
   padding: 18px 12px;
   color: var(--muted-weak);
   text-align: center;
+}
+
+/* === 补齐类（第二轮 A6：8 处「用了没样式」+ B1 状态徽章 + A16 tag 基类 + A18 弹窗关闭钮） === */
+
+/* 工作台今日预约状态徽章（DashboardPage；类名静态不随状态变化，采用中性徽章避免误导） */
+.appointment-row .status {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  color: var(--muted);
+  border-radius: var(--radius-xs);
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+/* .arrived 为静态类名，样式由上述 .appointment-row .status 承担；显式登记使类失配扫描归零 */
+.appointment-row .status.arrived {
+}
+
+/* 库存报表截断提示（同 .reminder-muted 规格） */
+.report-truncated {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* FormBuilder 关联字段加载上限提示（同 .searchable-select-cap 规格） */
+.relation-load-cap {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* Tree 节点包裹容器 */
+.ui-tree-node {
+  display: grid;
+  gap: 2px;
+}
+
+/* 头影对比选项容器（与 .ceph-compare-controls 同规格） */
+.ceph-compare-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+/* 影像对比工具栏（与 .imaging-compare-controls 同规格） */
+.imaging-compare-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 12px;
+}
+
+/* 侧栏分组包裹：纯语义包裹，无视觉影响 */
+.sidebar-group-wrap {
+  display: contents;
+}
+
+/* 牙位图上排修饰：默认 .ui-tooth 形状即为上排（6px 6px 10px 10px），
+   显式登记此规则使类失配扫描归零（lower 有覆盖、upper 与默认一致） */
+.ui-tooth-grid.upper .ui-tooth {
+  border-radius: 6px 6px 10px 10px;
+}
+
+/* 通用标签基类（A16：统一 reminder/template 两处拷贝，取值 2px 10px） */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  padding: 2px 10px;
+  border-radius: var(--radius-xs);
+  background: var(--soft);
+  color: var(--primary);
+}
+
+/* 弹窗头部：标题 + 显式关闭按钮（A18） */
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.modal-close {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.modal-close:hover {
+  background: var(--surface-muted);
+  color: var(--text);
 }
 
 /* 表格行操作按钮组 */
@@ -2592,176 +2698,7 @@ tbody tr:hover {
   background: var(--soft);
 }
 
-/* ===== 通用组件：Drawer / Switch / Segmented / Tooltip / Accordion ===== */
-.ui-drawer-layer {
-  position: fixed;
-  inset: 0;
-  z-index: 120;
-}
-
-.ui-drawer-mask {
-  position: absolute;
-  inset: 0;
-  background: var(--backdrop);
-  animation: uiDrawerMaskIn 150ms var(--ease);
-}
-
-.ui-drawer-layer.closing .ui-drawer-mask {
-  animation: uiDrawerMaskOut 120ms var(--ease) forwards;
-}
-
-.ui-drawer-panel {
-  position: absolute;
-  top: 0;
-  right: 0;
-  height: 100%;
-  width: min(600px, 94vw);
-  display: flex;
-  flex-direction: column;
-  background: var(--surface);
-  border-left: 1px solid var(--border);
-  box-shadow: var(--shadow-toast);
-  animation: uiDrawerIn 200ms var(--ease);
-}
-
-.ui-drawer-layer.closing .ui-drawer-panel {
-  animation: uiDrawerOut 140ms var(--ease) forwards;
-}
-
-@keyframes uiDrawerMaskIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes uiDrawerMaskOut {
-  from { opacity: 1; }
-  to { opacity: 0; }
-}
-
-@keyframes uiDrawerIn {
-  from { transform: translateX(100%); }
-  to { transform: translateX(0); }
-}
-
-@keyframes uiDrawerOut {
-  from { transform: translateX(0); }
-  to { transform: translateX(100%); }
-}
-
-.ui-drawer-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border-bottom: 1px solid var(--border);
-  padding: 16px 18px;
-}
-
-.ui-drawer-head h3 {
-  margin: 0;
-  font-size: 16px;
-}
-
-.ui-drawer-close {
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.ui-drawer-body {
-  flex: 1;
-  overflow: auto;
-  padding: 18px;
-}
-
-.ui-drawer-foot {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  border-top: 1px solid var(--border);
-  padding: 14px 18px;
-}
-
-.ui-switch {
-  width: 40px;
-  height: 22px;
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  background: var(--surface-muted);
-  position: relative;
-  padding: 0;
-  cursor: pointer;
-  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
-}
-
-.ui-switch span {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: var(--shadow-pressed);
-  transition: transform var(--dur-fast) var(--ease);
-}
-
-.ui-switch.on {
-  background: var(--primary);
-  border-color: var(--primary);
-}
-
-.ui-switch.on span {
-  transform: translateX(18px);
-}
-
-.ui-radio-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.ui-radio {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  color: var(--text);
-}
-
-.ui-segmented {
-  display: inline-flex;
-  gap: 3px;
-  padding: 3px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface-muted);
-}
-
-.ui-segmented button {
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  border-radius: var(--radius-xs);
-  padding: 6px 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
-    box-shadow var(--dur-fast) var(--ease);
-}
-
-.ui-segmented button.active {
-  background: var(--surface);
-  color: var(--primary);
-  box-shadow: var(--shadow-pressed);
-}
-
+/* ===== 通用组件：Tooltip ===== */
 .ui-tooltip-wrap {
   position: relative;
   display: inline-flex;
@@ -2798,99 +2735,7 @@ tbody tr:hover {
   transform: translateX(-50%) translateY(0);
 }
 
-.ui-accordion {
-  overflow: hidden;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-}
-
-.ui-accordion-item + .ui-accordion-item {
-  border-top: 1px solid var(--border);
-}
-
-.ui-accordion-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  width: 100%;
-  border: 0;
-  background: var(--surface);
-  color: var(--text);
-  padding: 12px 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color var(--dur-fast) var(--ease);
-}
-
-.ui-accordion-head:hover {
-  background: var(--surface-muted);
-}
-
-.ui-accordion-icon {
-  transition: transform var(--dur-fast) var(--ease);
-}
-
-.ui-accordion-item.open .ui-accordion-icon {
-  transform: rotate(45deg);
-}
-
-.ui-accordion-body {
-  max-height: 0;
-  overflow: hidden;
-  padding: 0 14px;
-  color: var(--muted);
-  font-size: 13px;
-  transition: max-height var(--dur) var(--ease), padding var(--dur) var(--ease);
-}
-
-.ui-accordion-item.open .ui-accordion-body {
-  max-height: 40rem;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 0 14px 12px;
-}
-
-/* ===== 通用组件：Steps / Timeline / Tree / Kanban / Upload / Batch / Dropdown / Dental ===== */
-.ui-steps {
-  display: flex;
-  gap: 6px;
-  align-items: flex-start;
-}
-
-.ui-step {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  padding: 4px 2px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.ui-step-dot {
-  width: 26px;
-  height: 26px;
-  display: grid;
-  place-items: center;
-  border: 2px solid var(--border-strong);
-  border-radius: 50%;
-  background: var(--surface);
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.ui-step.active { color: var(--primary); }
-.ui-step.active .ui-step-dot { border-color: var(--primary); background: var(--soft); color: var(--primary); }
-.ui-step.done { color: var(--success); }
-.ui-step.done .ui-step-dot { border-color: var(--success); background: var(--success-soft); color: var(--success); }
-
+/* ===== 通用组件：Steps / Timeline / Tree / Kanban / Upload / Batch / Dental ===== */
 .ui-timeline {
   display: grid;
   gap: 14px;
@@ -2961,7 +2806,7 @@ tbody tr:hover {
 .ui-tree-action {
   border: 0;
   background: var(--primary);
-  color: #fff;
+  color: var(--on-primary);
   border-radius: var(--radius-xs);
   padding: 4px 10px;
   font-size: 12px;
@@ -3021,25 +2866,6 @@ tbody tr:hover {
 .ui-batch-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--soft); border: 1px solid var(--primary); border-radius: var(--radius-sm); padding: 8px 12px; }
 .ui-batch-count { color: var(--primary); font-weight: 600; font-size: 12px; }
 
-.ui-dropdown { position: relative; display: inline-flex; }
-.ui-dropdown-trigger { display: inline-flex; align-items: center; gap: 6px; background: var(--surface); color: var(--text); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); padding: 8px 12px; font-weight: 600; cursor: pointer; transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
-.ui-dropdown-trigger:hover { background: var(--surface-muted); border-color: var(--primary); color: var(--primary); }
-.ui-dropdown-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 50; display: grid; gap: 2px; min-width: 150px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow-hover); padding: 6px; transform-origin: top left; animation: uiMenuIn 140ms var(--ease); }
-.ui-dropdown-menu.closing { animation: uiMenuOut 120ms var(--ease) forwards; pointer-events: none; }
-.ui-dropdown-menu button { display: flex; width: 100%; border: 0; background: transparent; color: var(--text); padding: 8px 10px; border-radius: var(--radius-xs); text-align: left; cursor: pointer; }
-.ui-dropdown-menu button:hover { background: var(--soft); color: var(--primary); }
-.ui-dropdown-menu button.danger { color: var(--danger); }
-
-@keyframes uiMenuIn {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes uiMenuOut {
-  from { opacity: 1; transform: translateY(0); }
-  to { opacity: 0; transform: translateY(-4px); }
-}
-
 .ui-dental-chart { display: grid; gap: 6px; }
 .ui-tooth-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
 .ui-tooth { min-width: 0; height: 34px; border: 1px solid var(--border-strong); border-radius: 6px 6px 10px 10px; background: var(--surface); color: var(--muted); font-size: 11px; cursor: pointer; }
@@ -3097,32 +2923,7 @@ tbody tr:hover {
   font-size: 13px;
 }
 
-/* ===== 通用组件：MultiSelect / DateRange / Progress / Badge ===== */
-.ui-multiselect { position: relative; min-width: 0; }
-.ui-multiselect-input {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  min-height: 38px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  padding: 6px 8px;
-  cursor: pointer;
-}
-.ui-chip { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; background: var(--soft); color: var(--primary); padding: 4px 9px; font-size: 12px; font-weight: 600; }
-.ui-multiselect-placeholder { color: var(--muted-weak); font-size: 12px; }
-.ui-multiselect-menu { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 50; display: grid; gap: 2px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow-hover); padding: 6px; transform-origin: top center; animation: uiMenuIn 140ms var(--ease); }
-.ui-multiselect-menu.closing { animation: uiMenuOut 120ms var(--ease) forwards; pointer-events: none; }
-.ui-multiselect-search { width: 100%; margin-bottom: 4px; }
-.ui-multiselect-option { display: flex; align-items: center; gap: 8px; border-radius: var(--radius-xs); padding: 8px 9px; cursor: pointer; }
-.ui-multiselect-option:hover { background: var(--surface-muted); }
-
-.ui-date-range { display: flex; align-items: center; gap: 8px; }
-.ui-date-range input { flex: 1; min-width: 0; }
-.ui-date-range-sep { color: var(--muted-weak); }
-
+/* ===== 通用组件：Progress / Badge ===== */
 .ui-progress { height: 8px; overflow: hidden; border-radius: 999px; background: var(--border-soft); }
 .ui-progress-fill { height: 100%; border-radius: 999px; background: var(--primary); transition: width var(--dur) var(--ease); }
 .ui-progress-fill.success { background: var(--success); }

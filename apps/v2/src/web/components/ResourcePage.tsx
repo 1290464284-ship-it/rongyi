@@ -464,7 +464,7 @@ function ResourceCrudPage({ resource: fixedResource, initialSearch }: { resource
             onChange={(name, value) => setForm((current) => ({ ...current, [name]: value }))}
           />
           <div className="modal-actions">
-            <button type="button" onClick={() => setShowForm(false)}>取消</button>
+            <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>取消</button>
             <button type="submit" disabled={submitting || (editingId !== null && staleRows)}>{submitting ? '保存中...' : '保存'}</button>
           </div>
         </form>
