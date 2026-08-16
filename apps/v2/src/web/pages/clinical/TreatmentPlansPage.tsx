@@ -169,12 +169,10 @@ export function TreatmentPlansPage() {
         }}
         rowActions={(row, ctx) => {
           const openBilling = () => {
-            /* v8 ignore next -- 本页列表无分页/搜索（queryKey 恒定），stale 恒为 false，守卫为防御冗余 */
             if (ctx.stale) return;
             setBillingTarget({ row, reload: ctx.reload });
           };
           const openFollowUp = () => {
-            /* v8 ignore next -- 同上 */
             if (ctx.stale) return;
             setFollowUpTarget({ row, reload: ctx.reload });
           };

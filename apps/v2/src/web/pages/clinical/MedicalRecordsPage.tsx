@@ -150,12 +150,10 @@ export function MedicalRecordsPage() {
       canDelete
       rowActions={(row, ctx) => {
         const openEdit = () => {
-          /* v8 ignore next -- 本页列表无分页/搜索（queryKey 恒定），stale 恒为 false，守卫为防御冗余 */
           if (ctx.stale) return;
           openEditRequest(row);
         };
         const openReview = () => {
-          /* v8 ignore next -- 同上 */
           if (ctx.stale) return;
           setReviewNote('');
           setReviewTarget(row);

@@ -176,13 +176,11 @@ export function CephalometricPage() {
         canDelete
         rowActions={(row, ctx) => {
           const openReport = () => {
-            /* v8 ignore next -- 本页列表无分页/搜索（queryKey 恒定），stale 恒为 false，守卫为防御冗余 */
             if (ctx.stale) return;
             setSendTarget(null);
             setReportTarget(row);
           };
           const openSend = () => {
-            /* v8 ignore next -- 同上 */
             if (ctx.stale) return;
             setReportTarget(null);
             setSendTarget(row);

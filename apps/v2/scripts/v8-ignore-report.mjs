@@ -48,10 +48,10 @@ if (!fs.existsSync(baselinePath)) {
 }
 const baseline = JSON.parse(fs.readFileSync(baselinePath, 'utf8'));
 console.log(`v8 ignore markers: ${total} (baseline ${baseline.total})`);
-const baselinePerFile = (baseline.perFile ?? {}) as Record<string, number>;
+const baselinePerFile = baseline.perFile ?? {};
 // 单文件 ratchet：A 文件删除、B 文件新增等量标记同样会被拦截，
 // 防止把关键文件（router/repository 等授权与数据访问路径）的新排除混过去。
-const violations: string[] = [];
+const violations = [];
 for (const [file, count] of Object.entries(perFile)) {
   const allowed = baselinePerFile[file] ?? 0;
   if (count > allowed) {

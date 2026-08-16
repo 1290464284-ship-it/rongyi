@@ -67,12 +67,10 @@ export function FirstExamsPage() {
         columns={firstExamColumns}
         rowActions={(row, ctx) => {
           const transitionStatus = (value: string) => {
-            /* v8 ignore next -- 本页列表无分页/搜索（queryKey 恒定），stale 恒为 false，守卫为防御冗余 */
             if (ctx.stale) return;
             if (value) void transitionFirstExam(showToast, ctx.reload, row.id, value);
           };
           const openTracking = () => {
-            /* v8 ignore next -- 同上 */
             if (ctx.stale) return;
             setDialogTarget({ kind: 'tracking', row });
           };

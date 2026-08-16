@@ -191,7 +191,6 @@ export function MemberCardsPage() {
   );
 
   function openAction(id: string, kind: 'RECHARGE' | 'CONSUME' | 'POINTS', stale: boolean) {
-    /* v8 ignore next -- 本页列表无分页/搜索（queryKey 恒定），stale 恒为 false 且按钮 disabled，守卫为防御冗余 */
     if (stale) return;
     setActionTarget(id);
     setActionKind(kind);
@@ -199,14 +198,12 @@ export function MemberCardsPage() {
   }
 
   function openPlan(row: CardRow, stale: boolean) {
-    /* v8 ignore next -- 同上 */
     if (stale) return;
     setActionTarget(row.id);
     setActionKind('PLAN');
   }
 
   function openQuote(row: CardRow, stale: boolean) {
-    /* v8 ignore next -- 同上 */
     if (stale) return;
     setActionTarget(row.id);
     setActionKind('QUOTE');

@@ -157,7 +157,6 @@ function TreatmentStatusSelect({ rowId, onTransition, disabled }: {
       disabled={disabled}
       aria-label="变更治疗状态"
       onChange={(event) => {
-        /* v8 ignore next -- 本页列表无分页/搜索（queryKey 恒定），disabled 恒为 false，守卫为防御冗余 */
         if (disabled) return;
         const next = event.target.value;
         setValue('');
