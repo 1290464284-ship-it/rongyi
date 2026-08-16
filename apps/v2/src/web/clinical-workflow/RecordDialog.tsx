@@ -69,9 +69,16 @@ export function RecordDialog({
           患者
           <input readOnly value={patientName} aria-label="患者" />
         </label>
+        {/* B6：/doctors 加载失败时行内提示并支持重试，避免静默空列表 */}
+        {doctors.isError && (
+          <div className="query-section-error">
+            <p className="error">医生列表加载失败</p>
+            <button type="button" className="btn-secondary" onClick={() => void doctors.refetch()}>重试</button>
+          </div>
+        )}
         <label>
           医生
-          <select value={doctorId} onChange={(event) => setDoctorId(event.target.value)}>
+          <select value={doctorId} onChange={(event) => setDoctorId(event.target.value)} disabled={doctors.isError}>
             <option value="">选择医生</option>
             {doctors.data?.map((doctor) => (
               <option key={String(doctor.id)} value={String(doctor.id)}>{String(doctor.name ?? doctor.id)}</option>

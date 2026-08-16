@@ -1359,54 +1359,7 @@ small {
   }
 }
 
-.board {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(190px, 1fr));
-  gap: 12px;
-  overflow-x: auto;
-  align-items: start;
-}
-
-.board-column {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  padding: var(--card-pad-compact);
-  min-width: 0;
-  min-height: 320px;
-  display: grid;
-  align-content: start;
-  gap: 10px;
-}
-
-.board-column header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-weight: 600;
-}
-
-.board-card {
-  background: var(--surface-muted);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-sm);
-  padding: var(--card-pad-compact);
-  display: grid;
-  gap: 6px;
-  transition: opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
-}
-
-.board-card.dragging {
-  opacity: 0.55;
-  transform: scale(0.98);
-}
-
-.board-card time {
-  color: var(--muted);
-  font-size: var(--fs-base);
-}
+/* A5：看板体系已统一到 KanbanBoard 组件（.ui-kanban-*），.board* 旧样式移除 */
 
 .board-summary {
   display: flex;
@@ -1439,35 +1392,7 @@ small {
   padding: 8px 0;
 }
 
-.timeline {
-  display: grid;
-  gap: 12px;
-}
-
-.timeline-item {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-left: 4px solid var(--primary);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  padding: var(--card-pad-panel);
-  display: grid;
-  gap: 6px;
-}
-
-.timeline-item p {
-  margin: 0;
-  color: var(--muted);
-}
-
-.timeline-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  color: var(--muted);
-  font-size: var(--fs-base);
-}
+/* A5：时间线体系已统一到 Timeline 组件（.ui-timeline-*），旧 .timeline* 样式移除 */
 
 /* ---------- 登录页：极简居中 + 薄荷渐变 ---------- */
 .login-page {
@@ -2737,12 +2662,7 @@ tbody tr:hover {
   padding: 12px 0;
 }
 
-/* 看板拖拽反馈 */
-.board-column.drag-over {
-  outline: 2px dashed var(--primary);
-  outline-offset: -2px;
-  background: var(--soft);
-}
+/* A5：看板拖拽反馈统一由 .ui-kanban-col.drag-over 承担，旧 .board-column 样式已移除 */
 
 /* ===== 通用组件：Tooltip ===== */
 .ui-tooltip-wrap {
@@ -2886,6 +2806,7 @@ tbody tr:hover {
 .ui-kanban-head { display: flex; justify-content: space-between; padding: 2px; font-size: var(--fs-base); }
 .ui-kanban-head span { color: var(--muted); }
 .ui-kanban-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow); padding: var(--card-pad-compact); cursor: grab; }
+.ui-kanban-card:hover { border-color: var(--primary); background: var(--soft); }
 .ui-kanban-card strong { display: block; font-size: var(--fs-base); }
 .ui-kanban-card span { color: var(--muted); font-size: var(--fs-sm); }
 .ui-kanban-card .kanban-actions {

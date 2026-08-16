@@ -17,6 +17,18 @@ const wrapper = ({ children }: { children: ReactNode }) => (
   </QueryClientProvider>
 );
 
+/** 构造一个共享 dataTransfer 存根：setData/getData 共用同一存储，模拟 HTML5 DnD */
+function makeDataTransfer() {
+  const store = new Map<string, string>();
+  return {
+    setData: (type: string, value: string) => store.set(type, value),
+    getData: (type: string) => store.get(type) ?? '',
+  };
+}
+
+const cardByName = (name: string) => screen.getByRole('listitem', { name: `卡片 ${name}` });
+const columnByName = (name: string) => screen.getByRole('list', { name });
+
 describe('AppointmentBoardPage', () => {
   afterEach(() => {
     cleanup();
@@ -51,8 +63,9 @@ describe('AppointmentBoardPage', () => {
     });
     render(<AppointmentBoardPage />, { wrapper });
     await waitFor(() => expect(screen.queryByText('预约看板加载中...')).toBeNull());
-    // 空状态列文案与回退标签
-    expect(screen.getAllByText('暂无预约').length).toBeGreaterThan(0);
+    // null 状态行不落入任何列：看板渲染 6 个空列、0 张卡片
+    expect(screen.getAllByRole('list')).toHaveLength(6);
+    expect(screen.queryAllByRole('listitem')).toHaveLength(0);
     expect(vi.mocked(apiRequest)).toHaveBeenCalled();
   });
 
@@ -73,13 +86,11 @@ describe('AppointmentBoardPage', () => {
     render(<AppointmentBoardPage />, { wrapper });
     await screen.findByText('P1');
     fireEvent.change(screen.getByLabelText('日期'), { target: { value: '2026-08-05' } });
-    // 新日期查询挂起 → placeholder 旧数据 → stale
     await waitFor(() => expect(document.querySelector('.page')?.getAttribute('aria-busy')).toBe('true'));
-    const card = document.querySelector('[data-id="a1"]') as HTMLElement;
-    const booked = document.querySelector('[data-status="BOOKED"]') as HTMLElement;
-    fireEvent.dragStart(card, { dataTransfer: {} });
-    fireEvent.dragOver(booked, { dataTransfer: {} });
-    fireEvent.drop(booked, { dataTransfer: {} });
+    const dataTransfer = makeDataTransfer();
+    const card = cardByName('P1');
+    fireEvent.dragStart(card, { dataTransfer });
+    fireEvent.drop(columnByName('已到诊'), { dataTransfer });
     expect(vi.mocked(apiRequest)).not.toHaveBeenCalledWith('/appointments/a1/status', expect.anything());
     resolveNew({ items: [], total: 0, page: 1, pageSize: 200 });
   });
@@ -93,19 +104,18 @@ describe('AppointmentBoardPage', () => {
     });
     render(<AppointmentBoardPage />, { wrapper });
     await screen.findByText('P1');
-    const booked = document.querySelector('[data-status="BOOKED"]') as HTMLElement;
-    const cancelled = document.querySelector('[data-status="CANCELLED"]') as HTMLElement;
-    fireEvent.dragOver(booked, { dataTransfer: {} });
+    const booked = columnByName('已预约');
+    const cancelled = columnByName('已取消');
+    fireEvent.dragOver(booked, { dataTransfer: makeDataTransfer() });
     expect(booked.className).toContain('drag-over');
     fireEvent.dragLeave(cancelled);
-    expect(booked.className).toContain('drag-over'); // 离开其他列不清除
+    expect(booked.className).toContain('drag-over');
     fireEvent.dragLeave(booked);
-    expect(booked.className).not.toContain('drag-over'); // 离开当前列才清除
+    expect(booked.className).not.toContain('drag-over');
 
-    // 拖到同状态列 → 无状态变更请求
-    const card = document.querySelector('[data-id="a1"]') as HTMLElement;
-    fireEvent.dragStart(card, { dataTransfer: { setData: vi.fn() } });
-    fireEvent.drop(booked, { dataTransfer: { setData: vi.fn() } });
+    const dataTransfer = makeDataTransfer();
+    fireEvent.dragStart(cardByName('P1'), { dataTransfer });
+    fireEvent.drop(booked, { dataTransfer });
     expect(vi.mocked(apiRequest)).not.toHaveBeenCalledWith('/appointments/a1/status', expect.anything());
   });
 
@@ -178,8 +188,10 @@ describe('AppointmentBoardPage', () => {
     });
     render(<AppointmentBoardPage />, { wrapper });
     expect(await screen.findByText('未填写患者')).toBeDefined();
-    expect(screen.getByText('未分配医生')).toBeDefined();
-    expect(screen.getAllByText('暂无预约').length).toBe(5);
+    expect(screen.getByText(/未分配医生/)).toBeDefined();
+    // 其余 5 列无卡片：只渲染空列头
+    expect(screen.getAllByRole('list')).toHaveLength(6);
+    expect(screen.getAllByRole('listitem')).toHaveLength(1);
   });
 
   it('prefers relation labels over raw ids on board cards', async () => {
@@ -194,9 +206,9 @@ describe('AppointmentBoardPage', () => {
     });
     render(<AppointmentBoardPage />, { wrapper });
     expect(await screen.findByText('患者甲')).toBeDefined();
-    expect(screen.getByText('张医生')).toBeDefined();
+    expect(screen.getByText(/张医生/)).toBeDefined();
     expect(screen.getByText('P2')).toBeDefined();
-    expect(screen.getByText('D2')).toBeDefined();
+    expect(screen.getByText(/D2/)).toBeDefined();
     expect(screen.queryByText('P1')).toBeNull();
   });
 
@@ -255,12 +267,10 @@ describe('AppointmentBoardPage', () => {
 
     render(<AppointmentBoardPage />, { wrapper });
     await screen.findByText('P1');
-    const card = document.querySelector('[data-id="a1"]')!;
-    const cancelledColumn = document.querySelector('[data-status="CANCELLED"]')!;
-
-    fireEvent.dragStart(card);
     fireEvent.change(screen.getByLabelText('已预约状态'), { target: { value: 'ARRIVED' } });
-    fireEvent.drop(cancelledColumn);
+    const dataTransfer = makeDataTransfer();
+    fireEvent.dragStart(cardByName('P1'), { dataTransfer });
+    fireEvent.drop(columnByName('已取消'), { dataTransfer });
 
     await waitFor(() => {
       const statusCalls = vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/appointments/a1/status');
@@ -292,15 +302,15 @@ describe('AppointmentBoardPage', () => {
     render(<AppointmentBoardPage />, { wrapper });
     expect(await screen.findByText('P1')).toBeDefined();
 
-    const card = document.querySelector('[data-id="a1"]')!;
+    const card = cardByName('P1');
     expect(card.getAttribute('draggable')).toBe('true');
-    const arrivedColumn = document.querySelector('[data-status="ARRIVED"]')!;
+    const arrivedColumn = columnByName('已到诊');
 
-    fireEvent.dragStart(card);
-    expect(card.className).toContain('dragging');
-    fireEvent.dragOver(arrivedColumn);
+    const dataTransfer = makeDataTransfer();
+    fireEvent.dragStart(card, { dataTransfer });
+    fireEvent.dragOver(arrivedColumn, { dataTransfer });
     expect(arrivedColumn.className).toContain('drag-over');
-    fireEvent.drop(arrivedColumn);
+    fireEvent.drop(arrivedColumn, { dataTransfer });
 
     await waitFor(() => {
       expect(apiRequest).toHaveBeenCalledWith(
@@ -309,10 +319,41 @@ describe('AppointmentBoardPage', () => {
       );
     });
     expect(await screen.findByText('预约状态已更新')).toBeDefined();
-
-    fireEvent.dragEnd(card);
-    expect(card.className).not.toContain('dragging');
     expect(arrivedColumn.className).not.toContain('drag-over');
+  });
+
+  it('moves a card with the keyboard arrows', async () => {
+    const today = todayLocalDate();
+    vi.mocked(apiRequest).mockImplementation(async (path: string) => {
+      if (path === `/appointments/by-date?date=${today}`) {
+        return {
+          items: [{ id: 'a1', patientId: 'P1', doctorId: 'D1', startTime: '2026-08-04T09:00:00.000Z', status: 'BOOKED' }],
+          total: 1,
+          page: 1,
+          pageSize: 200,
+        };
+      }
+      if (path === '/appointments/a1/status') {
+        return { success: true, data: { id: 'a1', status: 'ARRIVED' } };
+      }
+      return {};
+    });
+    render(<AppointmentBoardPage />, { wrapper });
+    expect(await screen.findByText('P1')).toBeDefined();
+
+    const card = cardByName('P1');
+    fireEvent.keyDown(card, { key: 'ArrowRight' });
+    await waitFor(() => {
+      expect(apiRequest).toHaveBeenCalledWith(
+        '/appointments/a1/status',
+        expect.objectContaining({ method: 'PATCH', body: expect.stringContaining('"status":"ARRIVED"') }),
+      );
+    });
+    const statusCalls = () => vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/appointments/a1/status');
+    expect(statusCalls()).toHaveLength(1);
+    // 已在最左列：ArrowLeft 不产生新的状态请求
+    fireEvent.keyDown(card, { key: 'ArrowLeft' });
+    expect(statusCalls()).toHaveLength(1);
   });
 
   it('ignores drops on the same status column and without a dragged card', async () => {
@@ -331,11 +372,10 @@ describe('AppointmentBoardPage', () => {
     render(<AppointmentBoardPage />, { wrapper });
     expect(await screen.findByText('P1')).toBeDefined();
 
-    // 无拖拽卡片时直接 drop：不发起任何状态请求
-    fireEvent.drop(document.querySelector('[data-status="CANCELLED"]')!);
-    // 拖到自身所在列：不发起任何状态请求
-    fireEvent.dragStart(document.querySelector('[data-id="a1"]')!);
-    fireEvent.drop(document.querySelector('[data-status="BOOKED"]')!);
+    fireEvent.drop(columnByName('已取消'), { dataTransfer: makeDataTransfer() });
+    const dataTransfer = makeDataTransfer();
+    fireEvent.dragStart(cardByName('P1'), { dataTransfer });
+    fireEvent.drop(columnByName('已预约'), { dataTransfer });
     expect(vi.mocked(apiRequest)).not.toHaveBeenCalledWith('/appointments/a1/status', expect.anything());
   });
 
@@ -378,8 +418,8 @@ describe('AppointmentBoardPage', () => {
     render(<AppointmentBoardPage />, { wrapper });
     expect(await screen.findByText('P1')).toBeDefined();
 
-    const arrivedColumn = document.querySelector('[data-status="ARRIVED"]')!;
-    fireEvent.dragOver(arrivedColumn);
+    const arrivedColumn = columnByName('已到诊');
+    fireEvent.dragOver(arrivedColumn, { dataTransfer: makeDataTransfer() });
     expect(arrivedColumn.className).toContain('drag-over');
     fireEvent.dragLeave(arrivedColumn);
     expect(arrivedColumn.className).not.toContain('drag-over');
@@ -394,7 +434,8 @@ describe('AppointmentBoardPage', () => {
       return {};
     });
     render(<AppointmentBoardPage />, { wrapper });
-    expect((await screen.findAllByText('暂无预约')).length).toBeGreaterThan(0);
+    expect((await screen.findAllByRole('list')).length).toBeGreaterThan(0);
+    expect(screen.queryAllByRole('listitem')).toHaveLength(0);
   });
 
   it('disables board interactions while showing placeholder data for a new date', async () => {
@@ -415,8 +456,11 @@ describe('AppointmentBoardPage', () => {
 
     fireEvent.change(screen.getByLabelText('日期'), { target: { value: '2026-08-05' } });
     expect(screen.getByText('P1')).toBeDefined();
-    const card = document.querySelector('[data-id="a1"]')!;
-    expect(card.getAttribute('draggable')).toBe('false');
+    // stale 期间拖拽被 onChange 守卫忽略，状态下拉禁用
+    const dataTransfer = makeDataTransfer();
+    fireEvent.dragStart(cardByName('P1'), { dataTransfer });
+    fireEvent.drop(columnByName('已到诊'), { dataTransfer });
+    expect(vi.mocked(apiRequest)).not.toHaveBeenCalledWith('/appointments/a1/status', expect.anything());
     expect((screen.getByLabelText('已预约状态') as HTMLSelectElement).disabled).toBe(true);
   });
 });

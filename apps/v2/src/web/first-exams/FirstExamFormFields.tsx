@@ -14,9 +14,16 @@ export function FirstExamFormFields({ form, update }: { form: FirstExamForm; upd
         患者
         <SearchableSelect resource="patients" value={form.patientId} onChange={(id) => update({ patientId: id })} ariaLabel="患者" placeholder="选择患者" />
       </label>
+      {/* B6：/doctors 加载失败时行内提示并支持重试，避免静默空列表 */}
+      {doctors.isError && (
+        <div className="query-section-error">
+          <p className="error">医生列表加载失败</p>
+          <button type="button" className="btn-secondary" onClick={() => void doctors.refetch()}>重试</button>
+        </div>
+      )}
       <label>
         医生
-        <select value={form.doctorId} onChange={(event) => update({ doctorId: event.target.value })}>
+        <select value={form.doctorId} onChange={(event) => update({ doctorId: event.target.value })} disabled={doctors.isError}>
           <option value="">选择医生</option>
           {doctors.data?.map((row) => (
             <option key={String(row.id)} value={String(row.id)}>{String(row.name ?? row.id)}</option>

@@ -232,7 +232,7 @@ export function PatientTimelinePage() {
           <button type="button" className="btn-secondary" onClick={() => void query.refetch()}>重试</button>
         </div>
       ))}
-      <div className="timeline">
+      <div className="ui-timeline">
         <Timeline items={renderedTimelineItems} />
         {events.length === 0 && !timelineLoading && failedQueries.length === 0 && <p className="empty-board">暂无时间线记录</p>}
       </div>

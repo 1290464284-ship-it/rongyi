@@ -394,13 +394,14 @@ function ResourceCrudPage({ resource: fixedResource, initialSearch }: { resource
       {rows.length === 0 ? (
         <EmptyState message="暂无记录" />
       ) : (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                {tableColumns.map((column) => <th key={column.key}>{column.label}</th>)}
-                {definition.capabilities.delete && (
-                  <th>
+        <DataTable
+          columns={[
+            ...tableColumns,
+            ...(definition.capabilities.delete
+              ? [{
+                  key: '_select',
+                  label: '',
+                  header: (
                     <input
                       type="checkbox"
                       aria-label="全选当前页"
@@ -408,39 +409,37 @@ function ResourceCrudPage({ resource: fixedResource, initialSearch }: { resource
                       checked={rows.length > 0 && rows.every((row) => selectedIds.has(String(row.id)))}
                       onChange={(event) => toggleSelectAll(event.target.checked)}
                     />
-                  </th>
-                )}
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, index) => (
-                <tr key={String(row.id ?? index)}>
-                  {tableColumns.map((column) => <td key={column.key}>{column.render(row)}</td>)}
-                  {definition.capabilities.delete && (
-                    <td>
-                      <input
-                        type="checkbox"
-                        aria-label={`选择 ${String(row.id)}`}
-                        disabled={staleRows}
-                        checked={selectedIds.has(String(row.id))}
-                        onChange={(event) => toggleSelect(String(row.id), event.target.checked)}
-                      />
-                    </td>
+                  ),
+                  render: (row: Record<string, unknown>) => (
+                    <input
+                      type="checkbox"
+                      aria-label={`选择 ${String(row.id)}`}
+                      disabled={staleRows}
+                      checked={selectedIds.has(String(row.id))}
+                      onChange={(event) => toggleSelect(String(row.id), event.target.checked)}
+                    />
+                  ),
+                }]
+              : []),
+            {
+              key: '_actions',
+              label: '操作',
+              render: (row: Record<string, unknown>) => (
+                <>
+                  {definition.capabilities.update && (
+                    <button disabled={staleRows} onClick={() => openEdit(row)}>编辑</button>
                   )}
-                  <td>
-                    {definition.capabilities.update && (
-                      <button disabled={staleRows} onClick={() => openEdit(row)}>编辑</button>
-                    )}
-                    {definition.capabilities.delete && (
-                      <button className="danger" disabled={staleRows} onClick={() => setDeleteTarget(String(row.id))}>删除</button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  {definition.capabilities.delete && (
+                    <button className="danger" disabled={staleRows} onClick={() => setDeleteTarget(String(row.id))}>删除</button>
+                  )}
+                </>
+              ),
+            },
+          ]}
+          rows={rows}
+          keyField="id"
+          emptyText="暂无记录"
+        />
       )}
       <PagePager
         page={page}
