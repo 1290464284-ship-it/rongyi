@@ -5,6 +5,9 @@ dist-electron
 coverage
 coverage-web
 release-v2/
+# dev 启动产物：tsx dev 默认写仓库根 data/logs（打包版运行时走 Electron userData）
+/data/
+/logs/
 apps/v2/data/
 apps/v2/logs/
 apps/v2/reports/
@@ -33,4 +36,5 @@ apps/v2/performance/history.json
 apps/v2/performance/latest.json
 apps/v2/performance/snapshot-latest.json
 apps/v2/flaky-quarantine/history.json
+dsh-usage/
 apps/v2/.stryker-tmp/
