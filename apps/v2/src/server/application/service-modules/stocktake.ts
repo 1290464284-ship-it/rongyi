@@ -94,7 +94,7 @@ export class StocktakeService {
     const cursorCondition = keysetCondition(options.cursor, keyset);
     const hasCursor = cursorCondition.where !== '';
     const rows = this.db.prepare(
-      `SELECT s.id, s.number, s.status, s.startedById, s.startedAt,
+      `SELECT s.id, s.number, s.status, s.startedById, s.startedAt, s.createdAt,
               s.completedById, s.completedAt, s.note,
               (SELECT COUNT(*) FROM StocktakeItem si
                 WHERE si.stocktakeId = s.id AND si.deletedAt IS NULL) AS itemCount,

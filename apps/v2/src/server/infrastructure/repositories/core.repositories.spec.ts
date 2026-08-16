@@ -503,6 +503,39 @@ describe('core repositories', () => {
     expect(all.items.some((row) => row.id === 'scope-upcoming')).toBe(true);
   });
 
+  it('reminders：keyset 游标翻页与快照一致、不重不漏', () => {
+    const repo = new SqliteFollowUpRepository(db);
+    // 本文件共享 DB：快照过滤本用例 keyset-fu-* 行（planDate ASC, id ASC），再按 nextCursor 逐页对账。
+    const base = new Date('2026-09-01T00:00:00.000Z');
+    for (let i = 0; i < 3; i += 1) {
+      const planDate = new Date(base.getTime() + i * 86_400_000).toISOString().slice(0, 10);
+      repo.insert({
+        id: `keyset-fu-${i}`,
+        clinicId: null,
+        patientId: 'followup-patient',
+        planDate,
+        content: `keyset-${i}`,
+        status: 'PENDING',
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+    const onlyKeyset = (rows: Array<Record<string, unknown>>) =>
+      rows.filter((row) => String(row.content ?? '').startsWith('keyset-'));
+    const snapshot = onlyKeyset(repo.reminders(undefined, { scope: 'all', page: 1, pageSize: 500 } as never).items);
+    expect(snapshot.length).toBeGreaterThanOrEqual(3);
+    const walked: string[] = [];
+    let cursor: string | null = null;
+    for (let page = 1; page <= 10; page += 1) {
+      const pageResult = repo.reminders(undefined, { scope: 'all', page, pageSize: 1, cursor } as never);
+      walked.push(...onlyKeyset(pageResult.items).map((row) => String(row.id)));
+      if (!pageResult.nextCursor) break;
+      cursor = pageResult.nextCursor;
+    }
+    expect(walked).toEqual(snapshot.map((row) => String(row.id)));
+    expect(new Set(walked).size).toBe(snapshot.length);
+  });
+
   it('covers repository nullish, boolean, and auth mapping branches', () => {
     seedDependentFixtures();
     const member = new SqliteMemberCardRepository(db);

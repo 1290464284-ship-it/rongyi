@@ -343,6 +343,30 @@ describe('StocktakeService', () => {
     expect(lastPage.truncated).toBe(false); // 3 > 2 + 1 不成立
   });
 
+  it('list：keyset 游标翻页与快照一致、不重不漏', () => {
+    // 自包含：不依赖其它用例的前置数据（测试执行顺序不保证），插入 3 条独立行。
+    for (let i = 0; i < 3; i += 1) {
+      db.prepare(
+        `INSERT INTO Stocktake (id, number, status, startedById, startedAt, clinicId, createdAt, updatedAt, deletedAt)
+         VALUES (?, ?, 'CANCELLED', 'user-admin-001', ?, 'clinic-v2-001', ?, ?, NULL)`,
+      ).run(`st-cursor-${i}`, `PD-CURSOR-${i}`, now, new Date(Date.parse(now) + i * 1000).toISOString(), now);
+    }
+    const onlyPg = (rows: Array<Record<string, unknown>>) =>
+      rows.filter((row) => String(row.number ?? '').startsWith('PD-CURSOR-'));
+    const snapshot = onlyPg(service.list(context, { page: 1, pageSize: 500 }).items);
+    expect(snapshot.length).toBeGreaterThanOrEqual(3);
+    const walked: string[] = [];
+    let cursor: string | null = null;
+    for (let page = 1; page <= 10; page += 1) {
+      const pageResult = service.list(context, { page, pageSize: 1, cursor });
+      walked.push(...onlyPg(pageResult.items).map((row) => String(row.id)));
+      if (!pageResult.nextCursor) break;
+      cursor = pageResult.nextCursor;
+    }
+    expect(walked).toEqual(snapshot.map((row) => String(row.id)));
+    expect(new Set(walked).size).toBe(snapshot.length);
+  });
+
   it('recordCount：接受 0 与 10 亿边界，拒绝超上限', () => {
     insertItem('stock-item-bound', 'ST-BOUND', '边界品', 5);
     const { id } = service.start({ number: 'PD-BOUND' }, context);
