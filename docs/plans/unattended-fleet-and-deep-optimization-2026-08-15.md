@@ -14,8 +14,11 @@
   超 450 行架构门禁失败，已拆分 backup-mirror.ts / backup-crypto.ts 修复，
   现 419 行）。全绿后自动合并（后台监控中）。
 - **A-P0.1 内部发布链验证**：run 31841021319 重跑中（首个 run 卡 8h 已取消）。
-- **B-2.2 SSH 密钥注册**：临时搁置——github.com 命令行+浏览器全面阻断
-  （api.github.com 正常），等待恢复窗口；后台探测中。
+- **B-2.2 SSH 密钥注册**：✅ 已完成（2026-08-16）——`gh auth refresh`
+  补齐 `admin:public_key` 后经 api.github.com 注册
+  `dsh-agent@PC-20260410UFBQ`（GitHub key id 160379533），
+  `ssh -T git@github.com` 与 SSH fetch main 均实测通过；github.com
+  阻断窗口亦已恢复。
 - 本次会话的临时脚本产物（scan/extract/pr-checks/merge-monitor 等）在
   %TEMP%，与本仓库无关；仓库内新增文档仅本任务书 + docs/plans 下既有文件。
 
@@ -64,7 +67,7 @@
 | B-1.3 | verify job 拆分评估（mutation/shuffle 并行） | ⬜ 未做 | 评估后决定，可能不动 |
 | B-1.4 | 新激活工作流首跑观察（v2-flaky 00:17 UTC / v2-security-audit） | ⬜ 未做 | 合并后尚未运行 |
 | B-2.1 | 本地 docs 提交推送（round 46 台账） | ✅ 已做未合并 | `1decbd80`，PR #17 |
-| B-2.2 | SSH 密钥注册（gh auth refresh，需用户交互） | ⬜ 未做 | 需用户操作 |
+| B-2.2 | SSH 密钥注册（gh auth refresh，需用户交互） | ✅ 已完成 | 2026-08-16 注册 `dsh-agent@PC-20260410UFBQ`（key id 160379533），SSH 认证实测通过 |
 | B-2.3 | 防漂移月度复跑（quality-score + v8 ratchet） | ⬜ 未排期 | 定期任务 |
 | B-3.1 | soak 长期验证（季度长跑或每周 24h job） | ⬜ 未做 | 评估后决定 |
 | B-3.2 | stability.json 增强（崩溃计数/最近备份时间） | ✅ 已做未合并 | `fc687785`，PR #17 |
@@ -83,7 +86,8 @@
 - ✅ 已做（未合并）：**6 个提交 / 4 个 PR**（#14、#15、#16、#17 全开）
 - 🔄 进行中/卡住：A-P0.1（内部发布 run 卡 8h+）、B-1.1（会话中断）
 - ⬜ 未做：A-P0.2、A-P2.3、A-P2.4、A-P4.1~4.3（7 项 A 线）+ B-1.3、B-1.4、
-  B-2.2、B-2.3、B-3.1、B-3.3、B-5.1~5.3、B-6.1、B-6.2（9 项 B 线）
+  B-2.3、B-3.1、B-3.3、B-5.1~5.3、B-6.1、B-6.2（8 项 B 线；B-2.2 已于
+  2026-08-16 完成）
 
 ---
 
@@ -103,7 +107,7 @@
    补 /S 静默用例。
 6. **A-P0.2**：干净机证书信任链验证（installer:smoke + 真实升级）。
 7. **B-1.4 / B-2.3 / B-3.1 / B-5 / B-6**：观察与评估类，逐项按计划原文的
-   「评估后决定」闸门处理；B-2.2 需用户交互（SSH 密钥注册）。
+   「评估后决定」闸门处理；B-2.2 SSH 密钥注册（2026-08-16 已完成）。
 8. 全部完成后按完成标准验收（90 天零人工干预演练 + 台账写回）。
 
 ## 3. 执行规范（沿用原计划）
@@ -116,7 +120,8 @@
   断点续传+签名失败不安装；证书再生成→全舰队重导信任（OPS 警示）；时钟漂移
   只提示不自动改时间；备份密钥丢失=数据不可恢复（设计如此）；关键告警走
   notify+alert 表+health.json，不依赖 UI 交互。
-- 用户交互点仅两处：A-P0.1 触发内部发布、B-2.2 SSH 密钥注册。
+- 用户交互点原为两处：A-P0.1 触发内部发布（已触发）、B-2.2 SSH 密钥注册
+  （2026-08-16 已闭环）。
 
 ## 4. 参考文档
 
@@ -144,6 +149,7 @@
 | #21 | `45f1cbbb` | B-1.4 v2-flaky 补 electron:compile + v2-security-audit 换官方 action | ✅ |
 | #22 | `eb85ddc3` | A-P2.3+A-P4.3 OPS.md、A-P2.4 镜像恢复演练、A-P4.1 deploy-fleet.ps1 | ✅ |
 | #23 | 待合并 | v2-security-audit 改子目录 action + 大库 smoke 模拟库口令对齐 | 最终 CI 进行中 |
+| #33 | 本 PR | B-2.2 SSH 密钥注册台账（计划文件 + apps/v2/README 无人值守访问说明） | 待三件套 CI |
 
 ### 5.2 关键证据
 
@@ -160,6 +166,13 @@
 - B-1.4：v2-flaky / v2-security-audit 首跑暴露 3 个真问题并已修复：
   缺 electron:compile、npm 无 osv-scanner 包、根目录 action.yml 无 runs；
   修复后复跑结果见 Actions。
+- B-2.2（2026-08-16）：`gh auth refresh -h github.com -s admin:public_key`
+  设备流补齐 scope 后，经 api.github.com 注册 ed25519 公钥
+  `dsh-agent@PC-20260410UFBQ`（fingerprint
+  `SHA256:q4iXBa275F/ImM/DUetJdr0aJYfAsB2WRlV76PPRM+g`，GitHub key id
+  160379533，verified=true）；`ssh -T git@github.com` 返回
+  `Hi 1290464284-ship-it! You've successfully authenticated`；
+  SSH fetch 成功把本地 origin/main 从 `f7071df0` 更新到 `d5bbd7f4`。
 
 ### 5.3 收口时状态
 
@@ -168,4 +181,5 @@
   B-1.4（修复）、B-2.3（登记）、B-5.1/5.2（评估结论登记）、B-6.1（节奏登记）。
 - ⏳ 收口最后两步：#23 合并 → 最终 main 触发 A-P0.1 内部发布 2.2.0 与
   v2-flaky / v2-security-audit 复跑；A-P0.1 成功即完成标准中的发布链闭环。
-- ⬜ 唯一外部依赖：B-2.2 SSH 密钥注册（需用户交互；github.com 阻断恢复后执行）。
+- ✅ B-2.2 已闭环：SSH 密钥注册完成并实测认证（详见 5.2）；原「唯一外部
+  依赖」不复存在。
