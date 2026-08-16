@@ -40,6 +40,7 @@
     "shots:ui-diff": "node scripts/ui-baseline-diff.mjs",
     "shots:ui-band": "node scripts/ui-band-analysis.mjs",
     "shots:a1-probe": "node scripts/a1-probe.mjs",
+    "styles:tokenize": "node scripts/tokenize-styles.mjs",
     "smoke:electron": "node scripts/electron-smoke.mjs",
     "smoke:packaged-ui": "node scripts/packaged-ui-smoke.mjs",
     "smoke:packaged-ui-simulated": "node scripts/packaged-ui-simulated-smoke.mjs",

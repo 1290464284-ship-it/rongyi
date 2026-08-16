@@ -57,11 +57,11 @@ function ClinicOverviewContent({ data: rows }: { data: Array<Record<string, unkn
   return (
     <div className="page">
       <div className="page-head"><h1>多门店经营概览</h1></div>
-      <div className="stat-row">
-        <span>患者：{totals.patients}</span>
-        <span>预约：{totals.appointments}</span>
-        <span>已收：{formatMoney(totals.paidAmount)}</span>
-        <span>未收：{formatMoney(totals.unpaidAmount)}</span>
+      <div className="stat-cards">
+        <div className="stat-card"><div className="stat-value">{totals.patients}</div><div className="stat-label">患者</div></div>
+        <div className="stat-card"><div className="stat-value">{totals.appointments}</div><div className="stat-label">预约</div></div>
+        <div className="stat-card"><div className="stat-value">{formatMoney(totals.paidAmount)}</div><div className="stat-label">已收</div></div>
+        <div className="stat-card"><div className="stat-value">{formatMoney(totals.unpaidAmount)}</div><div className="stat-label">未收</div></div>
       </div>
       <DataTable columns={columns} rows={rows} keyField="clinicId" emptyText="暂无诊所数据" />
     </div>

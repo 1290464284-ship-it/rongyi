@@ -212,7 +212,7 @@ export function AnalyticsDashboardPage() {
       <QuerySection
         query={dashboard}
         render={(data) => (
-          <div className="cards">
+          <div className="stat-cards">
             {[
               ['患者数', data?.patients ?? 0],
               ['预约数', data?.appointments ?? 0],
@@ -221,9 +221,9 @@ export function AnalyticsDashboardPage() {
               ['库存项目', data?.inventoryItems ?? 0],
               ['待随访', data?.pendingFollowUps ?? 0],
             ].map(([label, value]) => (
-              <div className="card" key={String(label)}>
-                <strong>{label}</strong>
-                <span>{String(value)}</span>
+              <div className="stat-card" key={String(label)}>
+                <div className="stat-value">{String(value)}</div>
+                <div className="stat-label">{String(label)}</div>
               </div>
             ))}
           </div>
