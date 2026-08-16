@@ -119,3 +119,14 @@
 - `pnpm --filter @dental/v2 exec vitest run src/web/hooks/use-doctors.spec.ts` — **6/6 通过**。
 - 受影响页面/表单 spec（AppointmentsPage、VisitsPage、TreatmentsPage、TreatmentPlansPage、ProcessingOrdersPage、CommissionPage、PrescriptionsPage、clinical-workflow、ImagingFormFields、RecordFormFields、treatment-plans、PrescriptionForm、processing-orders、first-exams-components）— **281/281 通过（14 个文件）**。
 - `pnpm --filter @dental/v2 typecheck` — **通过**（`tsc -p tsconfig.server.json && tsc -p tsconfig.web.json`）。
+
+## 7. 执行记录（格式化与字典打磨批）
+
+对应 §2/§3 打磨项，2026-08-16 收尾轮落地（提交 `3a71f108`）：
+
+- **W-3 日期/金额格式化统一**：`imaging/format.ts` 的 `formatDateTime`/`toLocalDatetime` 改为委托 `lib/format`（无效日期行为升级为原样返回）；`VisitsPage`、`AppointmentBoardPage`、`appointments/columns` 的手写 `toLocaleString('zh-CN')` 收敛为 `lib/format.formatDateTime`；`TreatmentPlansPage` 回访列只显示日期部分、总价回填改用 `centsToYuanString`；`InventoryWorkflowPage` 盘点开始时间收敛 `formatDateTime`。说明：`VisitsPage`/`TreatmentsPage` 的 `slice(0,10)` 是 date 输入控件值（非展示列），保留。
+- **W-5 字典缓存**：`ChargesPage` 的 charge-trees / pay-methods/tree 加 `staleTime: 5 * 60_000`（/doctors 已由 useDoctors 的 `staleTime: Infinity` 覆盖）。
+- **W-10 工具函数下沉**：新建 `lib/csv.ts`（`csvCell` + `downloadTextFile`，公式注入防护 + BOM 下载），`analytics-utils` 改 re-export（`today` → `todayLocalDate`），`ResourcePage` 及其 spec 改从 lib 导入——消除共享组件依赖页面模块的分层倒置。
+- **W-12 ID 截断统一**：`InventoryWorkflowPage` 单号/库存项目列 `slice(0,14/12)` → `slice(0,8)`。
+- **W-9 评估结论（不迁移）**：各模块私有字典（PRESCRIPTION_STATUS / REVIEW_STATUS / EDIT_STATUS / CATEGORY_TYPE / PHASE / REPORT_TYPE / DICT_TYPE / PLAN_DISCOUNT / TYPE 等）均为单域专用、键集与 `lib/labels` 无重复；真正重复的 followUpStatus 双文案已在 §6 轮收敛。为避免单域常量搬迁的无价值 churn，维持模块内定义。
+- 另经核：`imaging.type` 与 `CephalometricFormFields.templateId` 为自由文本字段（无枚举源），保留文本输入（对应 §2 的 W-4 项，select 化仅适用于 Plan/Cephalometric 的 status）。

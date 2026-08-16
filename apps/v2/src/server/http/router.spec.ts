@@ -319,6 +319,43 @@ describe('resource router', () => {
     expect(exported.text).toMatch(/\*{8}1234/);
   });
 
+  it('masks idCard in patient lists but keeps the full value on the detail endpoint', async () => {
+    await request(app)
+      .post('/api/v2/resources/patients')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        code: 'LIST-IDCARD',
+        name: 'List IdCard Patient',
+        gender: 'UNKNOWN',
+        phone: '13600008888',
+        idCard: '110101199001011234',
+        source: 'OTHER',
+        active: true,
+      })
+      .expect(201);
+    // 列表：身份证掩码（保留尾号），不泄露完整号
+    const list = await request(app)
+      .get('/api/v2/resources/patients?code=LIST-IDCARD')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    const listed = (list.body.data.items as Array<{ id: string; idCard: string | null }>)
+      .find((row) => row.idCard !== null);
+    expect(listed).toBeDefined();
+    expect(listed!.idCard).toBe('********1234');
+    // 非患者资源不做列表掩码（maskListRow 空表分支）
+    const suppliers = await request(app)
+      .get('/api/v2/resources/suppliers?page=1&pageSize=1')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(suppliers.body.data.items).toBeInstanceOf(Array);
+    // 详情：完整值供编辑回填（编辑路径数据源）
+    const detail = await request(app)
+      .get(`/api/v2/resources/patients/${String(listed!.id)}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(detail.body.data.idCard).toBe('110101199001011234');
+  });
+
   it('ends an export response when streaming fails after headers', async () => {
     const streamNow = new Date().toISOString();
     const insertStream = db.prepare(
