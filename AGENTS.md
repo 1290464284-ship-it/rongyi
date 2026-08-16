@@ -64,6 +64,18 @@ pnpm electron:dist
 pnpm --filter @dental/v2 electron:dist:internal
 ```
 
+UI 视觉回归护栏（基线目录 `apps/v2/test-results/ui-baseline/`，详见 docs/audits/ui-redesign-统一方案.md 第九/十一章）：
+
+```powershell
+pnpm --filter @dental/v2 shots:ui-baseline   # 亮/暗关键页截图（UI_BASELINE_DIR/SCHEME 可覆盖）
+pnpm --filter @dental/v2 shots:ui-diff       # before/after 像素 diff（UI_DIFF_PAIR 可过滤）
+pnpm --filter @dental/v2 shots:ui-band       # 单对 x/y 带分布与平移分析
+pnpm --filter @dental/v2 shots:a1-probe      # 弹窗遮罩层级探针
+pnpm --filter @dental/v2 shots:ui-viewport   # 多视口/高DPI/打印媒体检查
+pnpm --filter @dental/v2 verify:desktop-sync # 桌面包与源码逐项同步核验
+pnpm --filter @dental/v2 styles:tokenize     # styles.css 刻度 token 化（幂等）
+```
+
 ## Architecture Constraints
 
 - SQLite remains the database. Use `better-sqlite3` with parameterized SQL.
