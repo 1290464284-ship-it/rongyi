@@ -491,6 +491,8 @@ A15（DataTable 真虚拟化）、A17（hub-tabs Unicode 还原）、C 级 busy 
 
 - 原始审计（阶段 0-1）产出的 A1-A19 / B1-B6 / C1-C14 / D1-D6 全部处置完毕：修复或明确豁免（用户可配置色）/归档。
 - 52 页逐页结论更新：本轮各模块经 B6/A5 合并/A7-A11 token 受益；第四章逐页表 + 9.5 节 + 10.1 合并构成完整结论。
-- 遗留待办（非审计项，可选）：QuickChargeDialog 单价 formatMoney、ReloadSync 每行实例化、B2 看板 focus 跟随播报微调——均属锦上添花，不阻塞交付。
+- **B6 收尾扩展**（609985b4）：医生下拉错误态补齐全部 10 处（原 6 处 + TriageDialog/RecordFormFields/ProcessingOrderFormFields/AppointmentsPage 双表单），全库 doctors 查询零静默失败。
+- **smoke 链（2026-08-16）**：`smoke:api` ✅（110 资源全链路）、`smoke:ui` ✅（9 模块路由导航全过）、`smoke:delivery` ✅ **ALL_DELIVERY_SMOKES_PASSED**（API/UI/load/state-machine concurrency，含加工结算 409 并发断言）。
+- 遗留待办（非审计项，可选）：QuickChargeDialog 单价 formatMoney、ReloadSync 每行实例化、看板 aria-live 播报微调、阶段 5 桌面端细节（1280×800/1920×1080 多视口截图、滚动条暗色样式、打印视图实测）——均不阻塞交付。
 
 
