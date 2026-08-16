@@ -37,6 +37,8 @@
     "smoke:api": "node scripts/api-smoke.mjs",
     "smoke:ui": "node scripts/ui-smoke.mjs",
     "shots:ui-baseline": "node scripts/ui-baseline-shots.mjs",
+    "shots:ui-diff": "node scripts/ui-baseline-diff.mjs",
+    "shots:ui-band": "node scripts/ui-band-analysis.mjs",
     "shots:a1-probe": "node scripts/a1-probe.mjs",
     "smoke:electron": "node scripts/electron-smoke.mjs",
     "smoke:packaged-ui": "node scripts/packaged-ui-smoke.mjs",

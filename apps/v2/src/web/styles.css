@@ -2133,9 +2133,9 @@ tbody tr:hover {
   margin-bottom: 12px;
 }
 
-/* 侧栏分组包裹：纯语义包裹，无视觉影响 */
+/* 侧栏分组包裹：纯语义包裹，无任何样式（保持块级包裹以维持 nav grid 原布局；
+   显式登记此规则使类失配扫描归零） */
 .sidebar-group-wrap {
-  display: contents;
 }
 
 /* 牙位图上排修饰：默认 .ui-tooth 形状即为上排（6px 6px 10px 10px），
