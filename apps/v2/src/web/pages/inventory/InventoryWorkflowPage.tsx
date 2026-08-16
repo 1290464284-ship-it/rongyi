@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
 import type { Page } from '../../lib/types';
 import { DataTable, LoadingState, PageError, PagePager, QuerySection, type DataTableColumn } from '../../components';
-import { formatMoney } from '../../lib/format';
+import { formatDateTime, formatMoney } from '../../lib/format';
 import { errorMessage } from '../../lib/messages';
 import { useAsyncAction } from '../../hooks/use-async-action';
 import { useToast } from '../../lib/toast-context';
@@ -90,7 +90,7 @@ export function InventoryWorkflowPage() {
   }
 
   const purchaseColumns: DataTableColumn<Record<string, unknown>>[] = [
-    { key: 'number', label: '单号', render: (row) => String(row.number ?? row.id ?? '').slice(0, 14) },
+    { key: 'number', label: '单号', render: (row) => String(row.number ?? row.id ?? '').slice(0, 8) },
     { key: 'supplierId', label: '供应商', render: (row) => String(row.supplierId ?? '') },
     { key: 'totalAmount', label: '金额', render: (row) => formatMoney(row.totalAmount) },
     {
@@ -150,7 +150,7 @@ export function InventoryWorkflowPage() {
         }} />
       ),
     },
-    { key: 'inventoryId', label: '库存项目', render: (row) => String(row.inventoryId ?? row.id ?? '').slice(0, 12) },
+    { key: 'inventoryId', label: '库存项目', render: (row) => String(row.inventoryId ?? row.id ?? '').slice(0, 8) },
     { key: 'rop', label: '补货点', render: (row) => String(row.rop ?? '') },
     { key: 'suggestedQty', label: '建议数量', render: (row) => String(row.suggestedQty ?? '') },
     { key: 'status', label: '状态', render: () => '待应用' },
@@ -212,7 +212,7 @@ export function InventoryWorkflowPage() {
     { key: 'number', label: '单号', render: (row) => String(row.number ?? '') },
     { key: 'status', label: '状态', render: (row) => STOCKTAKE_STATUS_LABELS[String(row.status)] ?? String(row.status) },
     { key: 'startedById', label: '开始人', render: (row) => String(row.startedById ?? '') },
-    { key: 'startedAt', label: '开始时间', render: (row) => String(row.startedAt ?? '').slice(0, 16).replace('T', ' ') },
+    { key: 'startedAt', label: '开始时间', render: (row) => formatDateTime(row.startedAt) },
     { key: 'itemCount', label: '项目数', render: (row) => String(row.itemCount ?? 0) },
     { key: 'differenceCount', label: '差异数', render: (row) => String(row.differenceCount ?? 0) },
     {

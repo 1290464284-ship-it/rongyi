@@ -5,7 +5,7 @@ import { DoctorSelect, SearchableSelect, type DataTableColumn } from '../../comp
 import { errorMessage } from '../../lib/messages';
 import { createInFlightGuard } from '../../lib/in-flight';
 import { VISIT_STATUS_LABELS } from '../../lib/status-extra-labels';
-import { toLocalInput } from '../../lib/format';
+import { toLocalInput, formatDateTime } from '../../lib/format';
 import { useToast } from '../../lib/toast-context';
 
 const STATUS_LABELS = VISIT_STATUS_LABELS;
@@ -58,7 +58,7 @@ const VISIT_FIELDS: Array<{ key: keyof VisitForm; label: string; kind: 'datetime
 const visitColumns: DataTableColumn<VisitRow>[] = [
   { key: 'patientId', label: '患者', render: (row) => row.patientIdLabel ?? row.patientId ?? '' },
   { key: 'doctorId', label: '医生', render: (row) => row.doctorIdLabel ?? row.doctorId ?? '' },
-  { key: 'startTime', label: '开始时间', render: (row) => row.startTime ? new Date(row.startTime).toLocaleString('zh-CN', { hour12: false }) : '' },
+  { key: 'startTime', label: '开始时间', render: (row) => formatDateTime(row.startTime) },
   { key: 'chiefComplaint', label: '主诉' },
   { key: 'status', label: '状态', render: (row) => STATUS_LABELS[String(row.status ?? '')] ?? String(row.status ?? '') },
 ];

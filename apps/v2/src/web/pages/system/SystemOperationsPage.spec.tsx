@@ -24,6 +24,7 @@ describe('SystemOperationsPage', () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    vi.useRealTimers();
     vi.mocked(apiRequest).mockReset();
   });
 
@@ -43,9 +44,11 @@ describe('SystemOperationsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '导入' }));
     expect(await screen.findByText('导入完成：成功 2，失败 0，分片 1')).toBeDefined();
 
+    vi.useFakeTimers();
     fireEvent.change(screen.getByLabelText('搜索关键词'), { target: { value: 'Demo' } });
     // 搜索输入已防抖（300ms），等待防抖值落地后再点击。
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 350)); });
+    act(() => vi.advanceTimersByTime(350));
+    vi.useRealTimers();
     fireEvent.click(screen.getByRole('button', { name: '搜索' }));
     expect(await screen.findByText('Demo Patient', {}, { timeout: 5000 })).toBeDefined();
   });
@@ -122,15 +125,19 @@ describe('SystemOperationsPage', () => {
     fireEvent.click(screen.getByRole('button', { name: '导入' }));
     expect(await screen.findByText('操作失败，请稍后重试')).toBeDefined();
 
+    vi.useFakeTimers();
     fireEvent.change(screen.getByLabelText('搜索关键词'), { target: { value: 'D' } });
     // 搜索输入已防抖（300ms），等待防抖值落地后再点击。
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 350)); });
+    act(() => vi.advanceTimersByTime(350));
+    vi.useRealTimers();
     fireEvent.click(screen.getByRole('button', { name: '搜索' }));
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
     expect(apiRequest).not.toHaveBeenCalledWith('/search?q=D', expect.anything());
 
+    vi.useFakeTimers();
     fireEvent.change(screen.getByLabelText('搜索关键词'), { target: { value: 'Demo' } });
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 350)); });
+    act(() => vi.advanceTimersByTime(350));
+    vi.useRealTimers();
     fireEvent.click(screen.getByRole('button', { name: '搜索' }));
     // 搜索 1 成功（mock 返回 []）：必须等它真正完成（'搜索完成' toast 出现即
     // busy 状态已随同一批 state 提交复位），否则改 mock 后的第二次点击会被
@@ -166,8 +173,10 @@ describe('SystemOperationsPage', () => {
     fireEvent.click(importButton);
     fireEvent.click(importButton);
 
+    vi.useFakeTimers();
     fireEvent.change(screen.getByLabelText('搜索关键词'), { target: { value: 'Demo' } });
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 350)); });
+    act(() => vi.advanceTimersByTime(350));
+    vi.useRealTimers();
     const searchButton = screen.getByRole('button', { name: '搜索' });
     fireEvent.click(searchButton);
     fireEvent.click(searchButton);
@@ -220,8 +229,10 @@ describe('SystemOperationsPage', () => {
       return {};
     });
     render(<ToastProvider><SystemOperationsPage /></ToastProvider>);
+    vi.useFakeTimers();
     fireEvent.change(screen.getByLabelText('搜索关键词'), { target: { value: 'Demo' } });
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 350)); });
+    act(() => vi.advanceTimersByTime(350));
+    vi.useRealTimers();
     fireEvent.click(screen.getByRole('button', { name: '搜索' }));
     expect(await screen.findByText('NoId Result')).toBeDefined();
   });

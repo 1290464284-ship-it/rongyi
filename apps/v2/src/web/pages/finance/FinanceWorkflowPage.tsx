@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
 import type { Page } from '../../lib/types';
@@ -7,6 +7,7 @@ import { formatMoney, toCents } from '../../lib/format';
 import { CHARGE_STATUS_LABELS } from '../../lib/labels';
 import { errorMessage } from '../../lib/messages';
 import { useToast } from '../../lib/toast-context';
+import { useAsyncAction } from '../../hooks/use-async-action';
 
 const WORKFLOW_PAGE_SIZE = 100;
 
@@ -19,8 +20,7 @@ type MoneyAction =
 export function FinanceWorkflowPage() {
   const { showToast } = useToast();
   const [action, setAction] = useState<MoneyAction>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const submittingRef = useRef(false);
+  const { busy: submitting, run: runSubmit } = useAsyncAction();
   const [cardPage, setCardPage] = useState(1);
   const [debtPage, setDebtPage] = useState(1);
   const cards = useQuery({
@@ -52,29 +52,28 @@ export function FinanceWorkflowPage() {
   }
 
   async function submitAmount(value: string) {
-    if (!action || submittingRef.current || stale) return;
+    if (!action || stale) return;
     const amount = toCents(value);
     if (!value.trim() || !Number.isFinite(amount) || amount <= 0) {
       showToast('请输入有效金额', 'error');
       setAction(null);
       return;
     }
-    setSubmitting(true);
-    submittingRef.current = true;
-    try {
-      if (action.kind === 'recharge') {
-        await run(`/member-cards/${action.id}/recharge`, action.id, { amount, requestId: crypto.randomUUID() });
-      } else if (action.kind === 'consume') {
-        await run(`/member-cards/${action.id}/consume`, action.id, { amount, requestId: crypto.randomUUID() });
-      } else {
-        // action.kind 为 recharge/consume/debt 三态穷举，此处即 debt（dead-code 简化：移除 else-if 的不可达 else 分支）
-        await run(`/debts/${action.id}/pay`, action.id, { amount, requestId: crypto.randomUUID() }, 'PATCH');
+    const target = action;
+    await runSubmit(async () => {
+      try {
+        if (target.kind === 'recharge') {
+          await run(`/member-cards/${target.id}/recharge`, target.id, { amount, requestId: crypto.randomUUID() });
+        } else if (target.kind === 'consume') {
+          await run(`/member-cards/${target.id}/consume`, target.id, { amount, requestId: crypto.randomUUID() });
+        } else {
+          // action.kind 为 recharge/consume/debt 三态穷举，此处即 debt（dead-code 简化：移除 else-if 的不可达 else 分支）
+          await run(`/debts/${target.id}/pay`, target.id, { amount, requestId: crypto.randomUUID() }, 'PATCH');
+        }
+      } finally {
+        setAction(null);
       }
-    } finally {
-      submittingRef.current = false;
-      setSubmitting(false);
-      setAction(null);
-    }
+    });
   }
 
   const cardColumns: DataTableColumn<Record<string, unknown>>[] = [

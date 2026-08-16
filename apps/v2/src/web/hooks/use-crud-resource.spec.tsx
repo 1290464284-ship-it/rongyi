@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useState, type ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useCrudResource } from './use-crud-resource';
 import { apiRequest } from '../lib/api';
@@ -51,6 +51,7 @@ function Harness() {
 describe('useCrudResource', () => {
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
     vi.mocked(apiRequest).mockReset();
   });
 
@@ -428,8 +429,10 @@ describe('useCrudResource', () => {
     render(<StaleHarness />, { wrapper });
     await waitFor(() => expect(screen.getByTestId('stale').textContent).toBe('false'));
 
+    vi.useFakeTimers();
     fireEvent.click(screen.getByText('search-new'));
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    act(() => vi.advanceTimersByTime(400));
+    vi.useRealTimers();
     await waitFor(() => expect(screen.getByTestId('stale').textContent).toBe('true'));
 
     fireEvent.click(screen.getByText('open-edit'));
@@ -501,8 +504,10 @@ describe('useCrudResource', () => {
     fireEvent.click(screen.getByText('open-edit'));
     await waitFor(() => expect(screen.getByTestId('show').textContent).toBe('true'));
     expect(screen.getByTestId('note').textContent).toBe('');
+    vi.useFakeTimers();
     fireEvent.click(screen.getByText('search-new'));
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    act(() => vi.advanceTimersByTime(400));
+    vi.useRealTimers();
     await waitFor(() => expect(screen.getByTestId('stale').textContent).toBe('true'));
     fireEvent.click(screen.getByText('submit'));
     expect(apiRequest).not.toHaveBeenCalledWith('/resources/things/r-1', expect.objectContaining({ method: 'PATCH' }));
@@ -589,8 +594,10 @@ describe('useCrudResource', () => {
       expect(screen.getByTestId('fetching').textContent).toBe('false');
       expect(screen.getByTestId('stale').textContent).toBe('false');
     });
+    vi.useFakeTimers();
     fireEvent.click(screen.getByText('search-new'));
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    act(() => vi.advanceTimersByTime(400));
+    vi.useRealTimers();
     await waitFor(() => expect(screen.getByTestId('stale').textContent).toBe('true'));
     fireEvent.click(screen.getByText('prev'));
     expect(screen.getByTestId('page').textContent).toBe('1');
@@ -670,8 +677,10 @@ describe('useCrudResource', () => {
     fireEvent.click(screen.getByText('set-1'));
     expect(screen.getByTestId('page').textContent).toBe('1');
     // 搜索换键进入 placeholder：setPage(2) 被拦截
+    vi.useFakeTimers();
     fireEvent.click(screen.getByText('search-new'));
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    act(() => vi.advanceTimersByTime(400));
+    vi.useRealTimers();
     await waitFor(() => expect(screen.getByTestId('stale').textContent).toBe('true'));
     fireEvent.click(screen.getByText('set-2'));
     expect(screen.getByTestId('page').textContent).toBe('1');

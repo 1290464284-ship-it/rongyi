@@ -72,10 +72,13 @@ export function ChargesPage({ initialSearch }: { initialSearch?: string } = {}) 
   const chargeTreeQuery = useQuery({
     queryKey: ['charge-trees'],
     queryFn: () => apiRequest<{ items: ChargeTreeNode[] }>('/charge-trees'),
+    // 字典类数据低频变更，5 分钟内复用缓存，避免每次挂载/聚焦重拉
+    staleTime: 5 * 60_000,
   });
   const payMethodQuery = useQuery({
     queryKey: ['pay-methods', 'tree'],
     queryFn: () => apiRequest<{ items: PayMethodNode[] }>('/pay-methods/tree'),
+    staleTime: 5 * 60_000,
   });
 
   if (crud.query.isLoading) return <LoadingState />;

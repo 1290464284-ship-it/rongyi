@@ -21,6 +21,11 @@ const {
   API_HEARTBEAT_INTERVAL_MS,
 } = require('./constants.cjs');
 const API_CONSOLE_MAX_BYTES = 5 * 1024 * 1024;
+const API_HEALTH_CHECK_TIMEOUT_MS = 500;
+const API_HEALTH_RETRY_INTERVAL_MS = 400;
+const API_KILL_EXIT_GRACE_MS = 5_000;
+const API_SHUTDOWN_GRACE_MS = 1_500;
+const API_SHUTDOWN_KILL_EXIT_GRACE_MS = 200;
 const { buildApiChildEnv } = require('./api-env.cjs');
 const { crashLog, notify, sendApiStatus } = require('./logging.cjs');
 const { getOrCreateSecret } = require('./secrets.cjs');
@@ -94,7 +99,7 @@ function waitForApi(port, timeoutMs = API_READY_TIMEOUT_MS) {
     let lastError = null;
     const attempt = () => {
       const request = http.get(
-        { hostname: '127.0.0.1', port, path: '/api/v2/health', timeout: 500 },
+        { hostname: '127.0.0.1', port, path: '/api/v2/health', timeout: API_HEALTH_CHECK_TIMEOUT_MS },
         (response) => {
           response.resume();
           if (response.statusCode === 200) {
@@ -116,7 +121,7 @@ function waitForApi(port, timeoutMs = API_READY_TIMEOUT_MS) {
         reject(lastError || new Error('API did not become ready'));
         return;
       }
-      setTimeout(attempt, 400);
+      setTimeout(attempt, API_HEALTH_RETRY_INTERVAL_MS);
     };
     attempt();
   });
@@ -335,7 +340,7 @@ async function ensureApiServerRunning() {
       } catch {
         done();
       }
-      setTimeout(done, 5_000);
+      setTimeout(done, API_KILL_EXIT_GRACE_MS);
     });
   }
   state.apiProcess = null;
@@ -371,8 +376,8 @@ async function stopApi() {
       }
       setTimeout(() => {
         if (!processToStop.killed) processToStop.kill();
-        setTimeout(done, 200);
-      }, 1500);
+        setTimeout(done, API_SHUTDOWN_KILL_EXIT_GRACE_MS);
+      }, API_SHUTDOWN_GRACE_MS);
     });
   }
 }

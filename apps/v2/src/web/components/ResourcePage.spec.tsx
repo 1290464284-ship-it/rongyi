@@ -9,11 +9,11 @@ import { ResourcePage } from './ResourcePage';
 import { apiRequest, downloadCsv } from '../lib/api';
 import { formatDateTime } from '../lib/format';
 import { ToastProvider } from './toast';
-import { downloadTextFile } from '../pages/analytics/analytics-utils';
+import { downloadTextFile } from '../lib/csv';
 
 vi.mock('../lib/api', () => ({ apiRequest: vi.fn(), downloadCsv: vi.fn() }));
-vi.mock('../pages/analytics/analytics-utils', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('../pages/analytics/analytics-utils')>();
+vi.mock('../lib/csv', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/csv')>();
   return { ...actual, downloadTextFile: vi.fn() };
 });
 

@@ -10,7 +10,7 @@ import { friendlyError } from '../lib/messages';
 import { useDebouncedValue } from '../hooks/use-debounce';
 import { useToast } from '../lib/toast-context';
 import { SIMPLE_LIST_COLUMN_LABELS } from '../lib/labels';
-import { csvCell, downloadTextFile } from '../pages/analytics/analytics-utils';
+import { csvCell, downloadTextFile } from '../lib/csv';
 
 /**
  * 元数据驱动的通用资源 CRUD 页（Round7 M-02 职责说明）。

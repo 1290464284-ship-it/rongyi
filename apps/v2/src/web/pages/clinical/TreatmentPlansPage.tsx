@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { apiRequest, fetchAllPages } from '../../lib/api';
 import { CrudPage } from '../../components/CrudPage';
 import { Dialog, type DataTableColumn } from '../../components';
-import { formatMoney, toCents } from '../../lib/format';
+import { formatMoney, toCents, centsToYuanString } from '../../lib/format';
 import { errorMessage } from '../../lib/messages';
 import { useToast, type ToastKind } from '../../lib/toast-context';
 import { PlanBillingDialog } from '../../treatment-plans/PlanBillingDialog';
@@ -49,7 +49,9 @@ const planColumns: DataTableColumn<PlanRow>[] = [
     render: (row) => {
       const rawStatus = String(row.followUpStatus ?? 'NONE');
       const label = FOLLOW_UP_STATUS_LABELS[rawStatus] ?? rawStatus;
-      return row.nextFollowUpAt ? `${label}（${String(row.nextFollowUpAt)}）` : label;
+      // 列表列只展示日期部分（避免裸渲 ISO 时间戳）
+      const dateOnly = String(row.nextFollowUpAt ?? '').slice(0, 10);
+      return row.nextFollowUpAt ? `${label}（${dateOnly}）` : label;
     },
   },
 ];
@@ -87,7 +89,7 @@ export function TreatmentPlansPage() {
             doctorId: String(row.doctorId ?? ''),
             name: String(row.name ?? ''),
             status: String(row.status ?? 'APPROVED'),
-            totalFee: row.totalFee === null || row.totalFee === undefined ? '' : (Number(row.totalFee) / 100).toFixed(2),
+            totalFee: centsToYuanString(row.totalFee),
             totalFeeConfirmed: false,
             remark: String(row.remark ?? ''),
             // 明细行由 PlanFormFields 打开编辑时异步拉取回填（formFromRow 为同步）

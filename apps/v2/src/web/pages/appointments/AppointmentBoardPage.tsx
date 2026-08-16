@@ -5,7 +5,7 @@ import type { Page } from '../../lib/types';
 import { KanbanBoard, LoadingState, PageError, type KanbanColumn } from '../../components';
 import { errorMessage } from '../../lib/messages';
 import { useToast } from '../../lib/toast-context';
-import { todayLocalDate } from '../../lib/format';
+import { todayLocalDate, formatDateTime } from '../../lib/format';
 import { APPOINTMENT_STATUS_LABELS } from '../../lib/labels';
 
 // 与 AppointmentsPage 共用同一字典（M-03），文案保持"已到诊/未到诊"一致。
@@ -23,7 +23,7 @@ type AppointmentRow = Record<string, unknown> & {
 
 /** B2：卡片时间与预约列表同口径（本地化完整时间），不再直渲 ISO 原文 */
 function boardTime(value?: string | null): string {
-  return value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '';
+  return formatDateTime(value);
 }
 
 export function AppointmentBoardPage() {

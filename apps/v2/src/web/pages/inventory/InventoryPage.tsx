@@ -6,6 +6,7 @@ import type { Page } from '../../lib/types';
 import { ConfirmDialog, Dialog, LoadingState, PageError, PagePager, SearchableSelect } from '../../components';
 import { errorMessage } from '../../lib/messages';
 import { useToast } from '../../lib/toast-context';
+import { useAsyncAction } from '../../hooks/use-async-action';
 import type { BatchRow, BatchListData } from '../../inventory/types';
 import { InventoryReportPanel } from './InventoryReportPanel';
 import { BarcodeView } from '../../inventory/BarcodeView';
@@ -23,8 +24,7 @@ export function InventoryPage() {
   const [itemIdError, setItemIdError] = useState<string | null>(null);
   const [type, setType] = useState<'IN' | 'OUT' | 'ADJUST'>('IN');
   const [quantity, setQuantity] = useState('1');
-  const [submitting, setSubmitting] = useState(false);
-  const submittingRef = useRef(false);
+  const { busy: submitting, run: runSubmitting } = useAsyncAction();
   const [batchNo, setBatchNo] = useState('');
   const [productionDate, setProductionDate] = useState('');
   const [expiryDate, setExpiryDate] = useState('');
@@ -35,8 +35,7 @@ export function InventoryPage() {
   const [editProductionDate, setEditProductionDate] = useState('');
   const [editExpiryDate, setEditExpiryDate] = useState('');
   const [editSupplierId, setEditSupplierId] = useState('');
-  const [editing, setEditing] = useState(false);
-  const editingRef = useRef(false);
+  const { busy: editing, run: runEditing } = useAsyncAction();
   const [deleteTarget, setDeleteTarget] = useState<BatchRow | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'report'>('overview');
   const [page, setPage] = useState(1);
@@ -100,7 +99,7 @@ export function InventoryPage() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    if (submitting || submittingRef.current || stale) return;
+    if (submitting || stale) return;
     // M13：itemId 必填，提交前字段级校验（避免报错延迟到服务端）
     if (!itemId || !itemId.trim()) {
       setItemIdError('请填写库存项目 ID');
@@ -112,37 +111,32 @@ export function InventoryPage() {
       showToast('请输入有效的库存数量', 'error');
       return;
     }
-    submittingRef.current = true;
-    setSubmitting(true);
-    try {
-      await apiRequest('/inventory/transactions', {
-        method: 'POST',
-        body: JSON.stringify({ itemId, type, quantity: qty, requestId: crypto.randomUUID() }),
-      });
-      showToast('库存流水已记录', 'success');
-      await Promise.all([query.refetch(), lowStock.refetch(), expiring.refetch()]);
-    } catch (error) {
-      showToast(errorMessage(error, '保存库存流水失败'), 'error');
-    } finally {
-      submittingRef.current = false;
-      setSubmitting(false);
-    }
+    const body = { itemId, type, quantity: qty, requestId: crypto.randomUUID() };
+    await runSubmitting(async () => {
+      try {
+        await apiRequest('/inventory/transactions', {
+          method: 'POST',
+          body: JSON.stringify(body),
+        });
+        showToast('库存流水已记录', 'success');
+        await Promise.all([query.refetch(), lowStock.refetch(), expiring.refetch()]);
+      } catch (error) {
+        showToast(errorMessage(error, '保存库存流水失败'), 'error');
+      }
+    });
   }
 
   async function generateReplenishment() {
-    if (submitting || submittingRef.current || stale) return;
-    submittingRef.current = true;
-    setSubmitting(true);
-    try {
-      await apiRequest('/inventory/replenishment/generate', { method: 'POST', body: JSON.stringify({}) });
-      showToast('补货建议已生成', 'success');
-      await lowStock.refetch();
-    } catch (error) {
-      showToast(errorMessage(error, '生成补货建议失败'), 'error');
-    } finally {
-      submittingRef.current = false;
-      setSubmitting(false);
-    }
+    if (submitting || stale) return;
+    await runSubmitting(async () => {
+      try {
+        await apiRequest('/inventory/replenishment/generate', { method: 'POST', body: JSON.stringify({}) });
+        showToast('补货建议已生成', 'success');
+        await lowStock.refetch();
+      } catch (error) {
+        showToast(errorMessage(error, '生成补货建议失败'), 'error');
+      }
+    });
   }
 
   async function searchByBarcode() {
@@ -186,7 +180,7 @@ export function InventoryPage() {
 
   async function submitBatch(event: FormEvent) {
     event.preventDefault();
-    if (submitting || submittingRef.current || stale) return;
+    if (submitting || stale) return;
     if (!itemId) {
       showToast('请先填写库存项目 ID', 'error');
       return;
@@ -196,49 +190,44 @@ export function InventoryPage() {
       showToast('请输入有效的入库数量', 'error');
       return;
     }
-    submittingRef.current = true;
-    setSubmitting(true);
-    try {
-      await apiRequest('/inventory-batches', {
-        method: 'POST',
-        body: JSON.stringify({
-          itemId,
-          batchNo: batchNo || undefined,
-          productionDate: productionDate || undefined,
-          expiryDate: expiryDate || undefined,
-          initialQuantity: qty,
-          supplierId: supplierId || undefined,
-        }),
-      });
-      showToast('批次已入库', 'success');
-      setBatchNo('');
-      setProductionDate('');
-      setExpiryDate('');
-      setBatchQuantity('');
-      setSupplierId('');
-      await Promise.all([query.refetch(), batches.refetch(), expiringBatches.refetch()]);
-    } catch (error) {
-      showToast(errorMessage(error, '批次入库失败'), 'error');
-    } finally {
-      submittingRef.current = false;
-      setSubmitting(false);
-    }
+    const body = {
+      itemId,
+      batchNo: batchNo || undefined,
+      productionDate: productionDate || undefined,
+      expiryDate: expiryDate || undefined,
+      initialQuantity: qty,
+      supplierId: supplierId || undefined,
+    };
+    await runSubmitting(async () => {
+      try {
+        await apiRequest('/inventory-batches', {
+          method: 'POST',
+          body: JSON.stringify(body),
+        });
+        showToast('批次已入库', 'success');
+        setBatchNo('');
+        setProductionDate('');
+        setExpiryDate('');
+        setBatchQuantity('');
+        setSupplierId('');
+        await Promise.all([query.refetch(), batches.refetch(), expiringBatches.refetch()]);
+      } catch (error) {
+        showToast(errorMessage(error, '批次入库失败'), 'error');
+      }
+    });
   }
 
   async function generateExpiryAlerts() {
-    if (submitting || submittingRef.current) return;
-    submittingRef.current = true;
-    setSubmitting(true);
-    try {
-      await apiRequest('/inventory-batches/expiry-alerts', { method: 'POST', body: JSON.stringify({ days: 30 }) });
-      showToast('到期提醒已生成', 'success');
-      await expiringBatches.refetch();
-    } catch (error) {
-      showToast(errorMessage(error, '生成到期提醒失败'), 'error');
-    } finally {
-      submittingRef.current = false;
-      setSubmitting(false);
-    }
+    if (submitting) return;
+    await runSubmitting(async () => {
+      try {
+        await apiRequest('/inventory-batches/expiry-alerts', { method: 'POST', body: JSON.stringify({ days: 30 }) });
+        showToast('到期提醒已生成', 'success');
+        await expiringBatches.refetch();
+      } catch (error) {
+        showToast(errorMessage(error, '生成到期提醒失败'), 'error');
+      }
+    });
   }
 
   function openEditBatch(batch: BatchRow) {
@@ -251,46 +240,43 @@ export function InventoryPage() {
 
   async function submitEditBatch(event: FormEvent) {
     event.preventDefault();
-    if (!editTarget || editing || editingRef.current) return;
-    editingRef.current = true;
-    setEditing(true);
-    try {
-      await apiRequest(`/inventory-batches/${editTarget.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          batchNo: editBatchNo,
-          productionDate: editProductionDate,
-          expiryDate: editExpiryDate,
-          supplierId: editSupplierId,
-        }),
-      });
-      showToast('批次已更新', 'success');
-      setEditTarget(null);
-      await Promise.all([batches.refetch(), expiringBatches.refetch()]);
-    } catch (error) {
-      showToast(errorMessage(error, '批次更新失败'), 'error');
-    } finally {
-      editingRef.current = false;
-      setEditing(false);
-    }
+    if (!editTarget || editing) return;
+    const targetId = editTarget.id;
+    const body = {
+      batchNo: editBatchNo,
+      productionDate: editProductionDate,
+      expiryDate: editExpiryDate,
+      supplierId: editSupplierId,
+    };
+    await runEditing(async () => {
+      try {
+        await apiRequest(`/inventory-batches/${targetId}`, {
+          method: 'PATCH',
+          body: JSON.stringify(body),
+        });
+        showToast('批次已更新', 'success');
+        setEditTarget(null);
+        await Promise.all([batches.refetch(), expiringBatches.refetch()]);
+      } catch (error) {
+        showToast(errorMessage(error, '批次更新失败'), 'error');
+      }
+    });
   }
 
   async function confirmDeleteBatch() {
-    if (!deleteTarget || submitting || submittingRef.current) return;
-    submittingRef.current = true;
-    setSubmitting(true);
-    try {
-      await apiRequest(`/inventory-batches/${deleteTarget.id}`, { method: 'DELETE' });
-      showToast('批次已删除', 'success');
-      setDeleteTarget(null);
-      await Promise.all([batches.refetch(), expiringBatches.refetch()]);
-    } catch (error) {
-      showToast(errorMessage(error, '删除批次失败'), 'error');
-      setDeleteTarget(null);
-    } finally {
-      submittingRef.current = false;
-      setSubmitting(false);
-    }
+    if (!deleteTarget || submitting) return;
+    const targetId = deleteTarget.id;
+    await runSubmitting(async () => {
+      try {
+        await apiRequest(`/inventory-batches/${targetId}`, { method: 'DELETE' });
+        showToast('批次已删除', 'success');
+        await Promise.all([batches.refetch(), expiringBatches.refetch()]);
+      } catch (error) {
+        showToast(errorMessage(error, '删除批次失败'), 'error');
+      } finally {
+        setDeleteTarget(null);
+      }
+    });
   }
 
   return (

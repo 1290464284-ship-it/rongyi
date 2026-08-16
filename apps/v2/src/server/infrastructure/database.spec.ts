@@ -37,14 +37,19 @@ describe('database bootstrap', () => {
   afterAll(async () => {
     db.close();
     // Windows 上 better-sqlite3 关闭后 WAL 句柄可能延迟释放，重试避免 EPERM
-    for (let attempt = 0; attempt < 12; attempt += 1) {
-      try {
-        fs.rmSync(dataDir, { recursive: true, force: true });
-        return;
-      } catch (error) {
-        if (attempt === 11) throw error;
-        await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));
+    vi.useFakeTimers();
+    try {
+      for (let attempt = 0; attempt < 12; attempt += 1) {
+        try {
+          fs.rmSync(dataDir, { recursive: true, force: true });
+          return;
+        } catch (error) {
+          if (attempt === 11) throw error;
+          await vi.advanceTimersByTimeAsync(250 * (attempt + 1));
+        }
       }
+    } finally {
+      vi.useRealTimers();
     }
   });
 

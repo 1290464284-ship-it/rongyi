@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../lib/api';
 import {
@@ -13,6 +13,7 @@ import {
 } from '../components';
 import { errorMessage } from '../lib/messages';
 import { useToast } from '../lib/toast-context';
+import { useAsyncAction } from '../hooks/use-async-action';
 import type { Page } from '../lib/types';
 import { emptyNarcoticForm, type NarcoticForm } from './types';
 
@@ -20,8 +21,7 @@ import { emptyNarcoticForm, type NarcoticForm } from './types';
 export function DispenseNarcoticPanel() {
   const { showToast } = useToast();
   const [narcoticForm, setNarcoticForm] = useState<NarcoticForm>(emptyNarcoticForm);
-  const [narcoticBusy, setNarcoticBusy] = useState(false);
-  const narcoticBusyRef = useRef(false);
+  const { busy: narcoticBusy, run: runNarcotic } = useAsyncAction();
   const [editNarcotic, setEditNarcotic] = useState<Record<string, unknown> | null>(null);
   const [deleteNarcoticTarget, setDeleteNarcoticTarget] = useState<Record<string, unknown> | null>(null);
   const [narcoticPage, setNarcoticPage] = useState(1);
@@ -33,52 +33,49 @@ export function DispenseNarcoticPanel() {
 
   async function submitNarcotic(event: FormEvent) {
     event.preventDefault();
-    if (narcoticBusy || narcoticBusyRef.current) return;
+    if (narcoticBusy) return;
     const quantity = Number(narcoticForm.quantity);
     if (!narcoticForm.recordDate || !narcoticForm.itemId || !Number.isSafeInteger(quantity) || quantity < 0) {
       showToast('请填写登记日期、麻药物品和有效的麻药数量', 'error');
       return;
     }
-    narcoticBusyRef.current = true;
-    setNarcoticBusy(true);
-    try {
-      await apiRequest('/narcotic-registry', {
-        method: 'POST',
-        body: JSON.stringify({
-          recordDate: narcoticForm.recordDate,
-          itemId: narcoticForm.itemId,
-          batchNo: narcoticForm.batchNo.trim() || undefined,
-          quantity,
-          usage: narcoticForm.usage.trim() || undefined,
-          balanceBefore: narcoticForm.balanceBefore.trim() === '' ? undefined : Number(narcoticForm.balanceBefore),
-          balanceAfter: narcoticForm.balanceAfter.trim() === '' ? undefined : Number(narcoticForm.balanceAfter),
-          remark: narcoticForm.remark.trim() || undefined,
-        }),
-      });
-      showToast('麻药登记成功', 'success');
-      setNarcoticForm(emptyNarcoticForm());
-      void narcotics.refetch();
-    } catch (error) {
-      showToast(errorMessage(error, '麻药登记失败'), 'error');
-    } finally {
-      narcoticBusyRef.current = false;
-      setNarcoticBusy(false);
-    }
+    await runNarcotic(async () => {
+      try {
+        await apiRequest('/narcotic-registry', {
+          method: 'POST',
+          body: JSON.stringify({
+            recordDate: narcoticForm.recordDate,
+            itemId: narcoticForm.itemId,
+            batchNo: narcoticForm.batchNo.trim() || undefined,
+            quantity,
+            usage: narcoticForm.usage.trim() || undefined,
+            balanceBefore: narcoticForm.balanceBefore.trim() === '' ? undefined : Number(narcoticForm.balanceBefore),
+            balanceAfter: narcoticForm.balanceAfter.trim() === '' ? undefined : Number(narcoticForm.balanceAfter),
+            remark: narcoticForm.remark.trim() || undefined,
+          }),
+        });
+        showToast('麻药登记成功', 'success');
+        setNarcoticForm(emptyNarcoticForm());
+        void narcotics.refetch();
+      } catch (error) {
+        showToast(errorMessage(error, '麻药登记失败'), 'error');
+      }
+    });
   }
 
   async function confirmDeleteNarcotic() {
-    if (!deleteNarcoticTarget || narcoticBusyRef.current) return;
-    narcoticBusyRef.current = true;
-    try {
-      await apiRequest(`/narcotic-registry/${String(deleteNarcoticTarget.id)}`, { method: 'DELETE' });
-      showToast('麻药登记已删除', 'success');
-      setDeleteNarcoticTarget(null);
-      void narcotics.refetch();
-    } catch (error) {
-      showToast(errorMessage(error, '删除麻药登记失败'), 'error');
-    } finally {
-      narcoticBusyRef.current = false;
-    }
+    if (!deleteNarcoticTarget) return;
+    const targetId = String(deleteNarcoticTarget.id);
+    await runNarcotic(async () => {
+      try {
+        await apiRequest(`/narcotic-registry/${targetId}`, { method: 'DELETE' });
+        showToast('麻药登记已删除', 'success');
+        setDeleteNarcoticTarget(null);
+        void narcotics.refetch();
+      } catch (error) {
+        showToast(errorMessage(error, '删除麻药登记失败'), 'error');
+      }
+    });
   }
 
   const narcoticColumns: DataTableColumn<Record<string, unknown>>[] = [

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { DataTableColumn } from '../components';
+import { formatDateTime } from '../lib/format';
 import { APPOINTMENT_STATUS_LABELS } from '../lib/labels';
 import type { AppointmentRow } from './types';
 
@@ -45,7 +46,7 @@ export function appointmentColumns({ onTransition, onEdit, onDelete, disabled = 
     {
       key: 'startTime',
       label: '开始时间',
-      render: (row) => row.startTime ? new Date(row.startTime).toLocaleString('zh-CN', { hour12: false }) : '',
+      render: (row) => formatDateTime(row.startTime),
     },
     {
       key: 'status',
