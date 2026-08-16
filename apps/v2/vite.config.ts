@@ -42,6 +42,18 @@ function cspNonce(): { name: string; apply: 'build'; transformIndexHtml: { order
 export default defineConfig({
   plugins: [react(), devCsp(), cspNonce()],
   test: {
+    // R78-09：vitest 默认 include 会吞掉 .stryker-tmp/sandbox-* 里被变异过的
+    // spec 副本，导致与 test:mutation 并发的普通 `pnpm test`（含 husky
+    // pre-commit 钩子）把变异副本当测试跑而失败。显式排除，同时保留 vitest
+    // 默认排除项（用户提供的 exclude 会整体覆盖默认列表）。
+    exclude: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/cypress/**',
+      '**/.{idea,git,cache,output,temp}/**',
+      '**/.stryker-tmp/**',
+      '**/{karma,rollup,webpack,vite,vitest,jest,ava,babel,nyc,cypress,tsup,build,eslint,prettier}.config.*',
+    ],
     // 重负载（数据库引导/加密备份/restore 全链路）在并行覆盖门禁下可能超过默认 5s；
     // 统一放宽到 20s，避免资源争抢造成的误报，同时仍能捕获真正的挂起。
     // A-P0.1 实测：windows-latest 上 internal release 的 Verify 阶段多文件出现

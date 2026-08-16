@@ -6,6 +6,7 @@ import { SqliteFollowUpRepository } from '../../infrastructure/repositories/core
 import { SystemClock } from '../../infrastructure/clock';
 import { tenantAnd, tenantParams, tenantWhere } from '../../infrastructure/tenant';
 import type { AppContext } from '../../../domain/contracts';
+import { CLINIC_TZ_OFFSET_HOURS } from '../../../domain/contracts';
 import type { FollowUpRepository } from '../ports';
 import { csvCell } from '../../shared/csv';
 
@@ -305,7 +306,7 @@ export class FollowUpService {
     const params = tenantParams(context.clinicId);
     const row = this.db.prepare(
       `SELECT COUNT(*) AS total,
-              COALESCE(SUM(CASE WHEN strftime('%Y-%m-%d', completedAt, '+8 hours') <= planDate THEN 1 ELSE 0 END), 0) AS onTime
+              COALESCE(SUM(CASE WHEN strftime('%Y-%m-%d', completedAt, '+${CLINIC_TZ_OFFSET_HOURS} hours') <= planDate THEN 1 ELSE 0 END), 0) AS onTime
        FROM FollowUp
        WHERE status = 'COMPLETED' AND planDate IS NOT NULL AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).get(...params) as { total: number; onTime: number };

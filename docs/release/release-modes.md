@@ -49,6 +49,43 @@ $env:ELECTRON_BUILDER_BINARIES_MIRROR = "https://npmmirror.com/mirrors/electron-
 pnpm --filter @dental/v2 electron:dist:internal
 ```
 
+### 内部签名证书管理（certs/internal-signing.pfx）
+
+内部版更新链的信任根是一张自签名代码签名证书（`create-internal-signing-cert.ps1`
+默认 5 年有效期）。全部资产**不入库**（根 `.gitignore` 的 `certs/` 与
+`apps/v2/.gitignore` 的 `build/internal-signing.pfx.cer` 生效）：
+
+| 资产 | 路径 | 性质 |
+|---|---|---|
+| 私钥+证书（PFX） | `certs/internal-signing.pfx` | 密钥，仅签名机持有 |
+| 密码 | `certs/internal-signing.pfx-password.txt` | 密钥，与 PFX 同机保管 |
+| 公钥 CER | `certs/internal-signing.pfx.cer`；签名时复制为 `apps/v2/build/internal-signing.pfx.cer` | 随安装包分发（asarUnpack） |
+
+流转链路：
+
+1. 首次生成：`powershell -ExecutionPolicy Bypass -File apps/v2/scripts/create-internal-signing-cert.ps1`
+   （`build-internal-installer.ps1` 检测缺失时也会自动生成）。
+2. `electron:dist:internal` 用 PFX 签名安装包与更新包，并把 CER 打进
+   `app.asar.unpacked/build/internal-signing.pfx.cer`。
+3. 受控机首次启动时 `electron/cert-trust.cjs` 把 CER 导入 CurrentUser 的
+   Root + TrustedPublisher（可用 `V2_EXPECTED_INTERNAL_CERT_THUMBPRINT` 做
+   指纹校验）；`deploy-fleet.ps1`（无人值守）与 `install-internal-cert.ps1`
+   （手动）可提前导入。
+4. `electron-updater` 的 `verifyUpdateCodeSignature: true` 以该信任根验证
+   每个内部更新的 Authenticode 签名（`cert-trust-smoke.ps1` 全程离线校验
+   这条链）。
+
+轮换/丢失的后果（必须知晓）：
+
+- **丢失 PFX 或密码**：无法再对内部版签名。重新生成证书后，已装机的信任根
+  仍是旧证书，**旧机器会拒绝所有新签名的更新**；需用
+  `install-internal-cert.ps1`（手动）或 `deploy-fleet.ps1`（无人值守）把新
+  CER 重新导入每台受控机。
+- **备份要求**：PFX 与密码至少双份离线备份，与数据备份同级别对待；至少一名
+  备份持有人（见《运维交接手册》）。
+- **到期（默认 5 年）**：到期前完成轮换并同步重灌 CER，否则更新链中断。
+
+
 ## 不花钱的边界
 
 - 自签名证书：免费，适合内部受控分发，Windows 会提示未知发布者。
