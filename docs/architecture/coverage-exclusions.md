@@ -127,6 +127,8 @@ Web **96.82% / 92.94% / 98.66% / 98.58%**，双门禁全绿——覆盖率口径
 | `src/web/pages/patients/PatientWorkflowPage.tsx`（calculate） | `if (stale) return` 守卫 | 计算风险按钮在 stale（placeholderData）期间 disabled（jsdom 不派发 click），守卫为防御冗余 |
 | `src/web/pages/communication/WechatTemplateLibrary.tsx`（content 兜底） | `config?.[scene.contentKey]?.trim() \|\| DEFAULT_CONTENT[...] \|\| ''` 的 `\|\| ''` 分支 | DEFAULT_CONTENT 为三个 contentKey 均提供非空默认文案，`\|\| ''` 仅用于 noUncheckedIndexedAccess 的类型收窄，运行期死代码 |
 | `src/web/pages/system/SyncConflictsPage.tsx`（resolve） | `if (busyId) return` 守卫 | busyId 期间全部「保留本地/采用远端」按钮 disabled（jsdom 不派发 click），双击守卫不可达，防御冗余 |
+| `src/web/components/dialog.tsx`（Dialog 打开焦点） | `(firstFocusable ?? modal).focus()` 的 modal 兜底 | A18 后弹窗头部恒有「关闭弹窗」按钮，firstFocusable 恒非空，兜底聚焦不可达，防御冗余 |
+| UI 统一轮新增双击/忙碌守卫 7 处（status-dialog refreshing、FollowUpReportPage exporting、WechatTemplateLibrary copyingKey、CommunicationWorkflowPage copyingId、PatientTimelinePage savingCustom、AnalyticsDashboardPage exporting、AppointmentBoardPage handleBoardChange stale） | `if (xxx) return` 守卫 | 各按钮在对应 busy/stale 期间 disabled（浏览器与 jsdom 均不派发 click），内部守卫为防御冗余 |
 
 ## 5. 其他已知取舍
 
