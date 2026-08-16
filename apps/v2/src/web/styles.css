@@ -2155,6 +2155,14 @@ tbody tr:hover {
   color: var(--primary);
 }
 
+/* 备份数据摘要对比网格（C1：BackupsPage 内联样式转类，1rem=16px 按 4px 刻度） */
+.backup-comparison {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
 /* 弹窗头部：标题 + 显式关闭按钮（A18） */
 .modal-head {
   display: flex;

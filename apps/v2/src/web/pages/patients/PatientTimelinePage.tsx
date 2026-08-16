@@ -6,7 +6,7 @@ import { errorMessage } from '../../lib/messages';
 import { useToast } from '../../lib/toast-context';
 import type { Page } from '../../lib/types';
 import { LoadingState, PageError, SearchableSelect, Timeline, type SearchableSelectRow } from '../../components';
-import { formatMoney } from '../../lib/format';
+import { formatDateTime, formatMoney } from '../../lib/format';
 import { parseStringArray } from '../../lib/parse';
 
 const TIMELINE_PAGE_SIZE = 50;
@@ -54,6 +54,8 @@ export function PatientTimelinePage() {
   const urlPatientId = searchParams.get('id');
   const [patientId, setPatientId] = useState<string | null>(urlPatientId);
   const [patientRows, setPatientRows] = useState<SearchableSelectRow[]>([]);
+  const [savingCustom, setSavingCustom] = useState(false);
+  const savingCustomRef = useRef(false);
   const derivedFromList = useRef(false);
   const generationRef = useRef(0);
   const [prevUrlPatientId, setPrevUrlPatientId] = useState(urlPatientId);
@@ -153,7 +155,7 @@ export function PatientTimelinePage() {
   ].sort((a, b) => String(b.time).localeCompare(String(a.time)) || a.type.localeCompare(b.type)) : [];
   const timelineItems = events.map((event) => ({
     title: event.title,
-    time: event.time,
+    time: event.time ? formatDateTime(event.time) : '',
     description: `${event.type} · ${event.status ?? ''}${
       event.amount === undefined || event.amount === null ? '' : ` · ${formatMoney(event.amount)}`
     }`,
@@ -172,6 +174,10 @@ export function PatientTimelinePage() {
     const definitions = customFields.data;
     /* v8 ignore next -- 保存按钮仅在 data 非空且 patientId 非空时渲染，守卫不可达 */
     if (!definitions || definitions.length === 0 || !patientId) return;
+    /* v8 ignore next -- 保存按钮在 savingCustom 期间 disabled，双击不可达 */
+    if (savingCustomRef.current) return;
+    savingCustomRef.current = true;
+    setSavingCustom(true);
     try {
       await apiRequest('/custom-fields/values', {
         method: 'PUT',
@@ -189,6 +195,9 @@ export function PatientTimelinePage() {
       await customFieldValues.refetch();
     } catch (error) {
       showToast(errorMessage(error, '保存自定义信息失败'), 'error');
+    } finally {
+      savingCustomRef.current = false;
+      setSavingCustom(false);
     }
   }
 
@@ -220,7 +229,7 @@ export function PatientTimelinePage() {
         <div className="query-section-error" key={`failed-${index}`}>
           <p className="error">该区块加载失败</p>
           <PageError message={query.error instanceof Error ? query.error.message : String(query.error)} />
-          <button type="button" onClick={() => void query.refetch()}>重试</button>
+          <button type="button" className="btn-secondary" onClick={() => void query.refetch()}>重试</button>
         </div>
       ))}
       <div className="timeline">
@@ -239,7 +248,7 @@ export function PatientTimelinePage() {
         <section className="page-section">
           <div className="page-head">
             <h2>自定义信息</h2>
-            <button onClick={() => void saveCustomFields()}>保存自定义信息</button>
+            <button disabled={savingCustom} onClick={() => void saveCustomFields()}>{savingCustom ? '保存中...' : '保存自定义信息'}</button>
           </div>
           <div className="form-grid">
             {customFields.data.map((field) => {

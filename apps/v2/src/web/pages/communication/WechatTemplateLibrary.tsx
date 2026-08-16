@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Copy } from 'lucide-react';
 import { copyText } from '../../lib/clipboard';
 import { useToast } from '../../lib/toast-context';
@@ -58,13 +59,19 @@ function renderSample(content: string, placeholders: TemplateScene['placeholders
 
 export function WechatTemplateLibrary({ config }: { config?: WechatTemplateConfig }) {
   const { showToast } = useToast();
+  const [copyingKey, setCopyingKey] = useState<string | null>(null);
 
-  async function copyTemplate(text: string) {
+  async function copyTemplate(key: string, text: string) {
+    /* v8 ignore next -- 复制按钮在 copyingKey 命中时 disabled，双击不可达 */
+    if (copyingKey) return;
+    setCopyingKey(key);
     try {
       await copyText(text);
       showToast('模板已复制', 'success');
     } catch {
       showToast('复制失败，请手动选择复制', 'error');
+    } finally {
+      setCopyingKey(null);
     }
   }
 
@@ -85,9 +92,9 @@ export function WechatTemplateLibrary({ config }: { config?: WechatTemplateConfi
               <pre className="wechat-template-content">{content}</pre>
               <p className="wechat-template-sample">{sample}</p>
               <div className="wechat-template-actions">
-                <button onClick={() => void copyTemplate(content)}>
+                <button disabled={copyingKey === scene.key} onClick={() => void copyTemplate(scene.key, content)}>
                   <Copy size={14} />
-                  复制模板
+                  {copyingKey === scene.key ? '复制中...' : '复制模板'}
                 </button>
               </div>
             </article>

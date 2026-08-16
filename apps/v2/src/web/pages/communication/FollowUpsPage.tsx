@@ -23,6 +23,7 @@ export function FollowUpsPage() {
   const { busy: generating, run: runGenerate } = useAsyncAction();
   const { busy: completing, run: runCompletion } = useAsyncAction();
   const { busy: executing, run: runExecution } = useAsyncAction();
+  const { busy: exporting, run: runExport } = useAsyncAction();
   const query = useQuery({
     queryKey: ['followup-reminders', page],
     queryFn: async () => {
@@ -212,7 +213,7 @@ export function FollowUpsPage() {
             <button onClick={() => setCompletion({ kind: 'batch' })} disabled={selectedIds.length === 0 || stale}>
               批量完成
             </button>
-            <button onClick={exportOverdue} disabled={stale}>导出逾期</button>
+            <button onClick={() => runExport(exportOverdue)} disabled={stale || exporting}>{exporting ? '导出中...' : '导出逾期'}</button>
           </>
         )}
       </div>

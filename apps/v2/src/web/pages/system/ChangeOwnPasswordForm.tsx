@@ -43,7 +43,7 @@ export function ChangeOwnPasswordForm({ showToast }: { showToast: (message: stri
         <input type="password" value={oldPassword} placeholder="旧密码" aria-label="旧密码" onChange={(event) => setOldPassword(event.target.value)} />
         <input type="password" value={newPassword} placeholder="新密码" aria-label="新密码" onChange={(event) => setNewPassword(event.target.value)} />
         <input type="password" value={confirmPassword} placeholder="确认新密码" aria-label="确认新密码" onChange={(event) => setConfirmPassword(event.target.value)} />
-        <button type="submit" disabled={submitting}>修改密码</button>
+        <button type="submit" disabled={submitting}>{submitting ? '提交中...' : '修改密码'}</button>
       </form>
     </>
   );

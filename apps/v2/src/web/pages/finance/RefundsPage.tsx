@@ -94,9 +94,14 @@ export function RefundsPage() {
       <div className="page-head">
         <h1>退款管理</h1>
       </div>
-      {summary.data && (
+      {summary.error ? (
+        <div className="query-section-error">
+          <p className="error">退款状态汇总加载失败</p>
+          <button type="button" className="btn-secondary" onClick={() => void summary.refetch()}>重试</button>
+        </div>
+      ) : summary.data ? (
         <RefundStatusChips counts={summary.data.counts} total={summary.data.total} />
-      )}
+      ) : null}
       {rows.length === 0 ? (
         <EmptyState message="暂无退款记录" />
       ) : (

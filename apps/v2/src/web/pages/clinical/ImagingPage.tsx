@@ -20,6 +20,7 @@ export function ImagingPage() {
   const [categoryForm, setCategoryForm] = useState({ name: '', type: 'ORTHODONTIC', sortOrder: 0, active: true });
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const categoryBusyRef = useRef(false);
+  const [categoryBusy, setCategoryBusy] = useState(false);
   const [toggleBusyId, setToggleBusyId] = useState<string | null>(null);
   const [deleteCategoryTarget, setDeleteCategoryTarget] = useState<ImagingCategoryRow | null>(null);
   const [compareLeftId, setCompareLeftId] = useState('');
@@ -80,6 +81,7 @@ export function ImagingPage() {
       active: categoryForm.active,
     };
     categoryBusyRef.current = true;
+    setCategoryBusy(true);
     try {
       if (editingCategoryId) {
         await apiRequest(`/resources/imagingCategories/${editingCategoryId}`, {
@@ -101,6 +103,7 @@ export function ImagingPage() {
       showToast(errorMessage(error, editingCategoryId ? '更新影像分类失败' : '创建影像分类失败'), 'error');
     } finally {
       categoryBusyRef.current = false;
+      setCategoryBusy(false);
     }
   }
 
@@ -294,7 +297,7 @@ export function ImagingPage() {
               onChange={(event) => setCategoryForm({ ...categoryForm, active: event.target.checked })}
             />
           </label>
-          <button type="submit">{editingCategoryId ? '保存修改' : '新增分类'}</button>
+          <button type="submit" disabled={categoryBusy}>{categoryBusy ? '保存中...' : editingCategoryId ? '保存修改' : '新增分类'}</button>
           {editingCategoryId && (
             <button
               type="button"

@@ -251,6 +251,7 @@ export function CommissionPage() {
                 </option>
               ))}
             </select>
+            {categories.error && <span className="field-error">分类列表加载失败</span>}
           </label>
           <label>
             成本类型
@@ -285,6 +286,7 @@ export function CommissionPage() {
                 <option key={String(doctor.id)} value={String(doctor.id)}>{String(doctor.name ?? doctor.id)}</option>
               ))}
             </select>
+            {doctors.error && <span className="field-error">医生列表加载失败</span>}
           </label>
           <label className="inline-label">
             <input aria-label="启用规则" type="checkbox" checked={form.enabled} onChange={(event) => setForm({ ...form, enabled: event.target.checked })} />

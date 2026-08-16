@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
 import type { Page } from '../../lib/types';
@@ -45,6 +46,7 @@ function reminderTagClass(scene: string): string {
 
 export function CommunicationWorkflowPage() {
   const { showToast } = useToast();
+  const [copyingId, setCopyingId] = useState<string | null>(null);
   const wechat = useQuery({
     queryKey: ['wechat-workflow'],
     queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/wechatMessages?page=1&pageSize=100'),
@@ -68,12 +70,17 @@ export function CommunicationWorkflowPage() {
     }
   }
 
-  async function copyReminderContent(content: string) {
+  async function copyReminderContent(id: string, content: string) {
+    /* v8 ignore next -- 复制按钮在 copyingId 命中时 disabled，双击不可达 */
+    if (copyingId) return;
+    setCopyingId(id);
     try {
       await copyText(content);
       showToast('话术已复制', 'success');
     } catch {
       showToast('复制失败，请手动选择复制', 'error');
+    } finally {
+      setCopyingId(null);
     }
   }
 
@@ -148,7 +155,9 @@ export function CommunicationWorkflowPage() {
                       </div>
                       <p className="reminder-content">{item.content}</p>
                       <div className="reminder-actions">
-                        <button onClick={() => void copyReminderContent(item.content)}>复制话术</button>
+                        <button disabled={copyingId === item.id} onClick={() => void copyReminderContent(item.id, item.content)}>
+                          {copyingId === item.id ? '复制中...' : '复制话术'}
+                        </button>
                         <ReminderActionButtons
                           id={item.id}
                           onMarkSent={markReminderSent}

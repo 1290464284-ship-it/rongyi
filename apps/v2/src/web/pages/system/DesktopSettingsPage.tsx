@@ -180,11 +180,11 @@ export function DesktopSettingsPage() {
         <div className="card"><strong>本地服务</strong><span>{apiStatus || '正常'}</span></div>
       </div>
       <div className="inline-form">
-        <button disabled={busyAction !== null} onClick={() => void runAction('autolaunch', toggleAutoLaunch)}>切换开机自启</button>
-        <button disabled={busyAction !== null} onClick={() => void runAction('restart', restartApi)}>重启 API</button>
-        <button disabled={busyAction !== null} onClick={() => void runAction('check', checkUpdates)}>检查更新</button>
-        {updateAvailable !== null && !updateStatus.includes('下载中') && !updateStatus.includes('已下载') && <button disabled={busyAction !== null} onClick={() => void runAction('download', downloadUpdate)}>下载更新</button>}
-        {updateStatus.includes('已下载') && <button disabled={busyAction !== null} onClick={() => void runAction('install', installUpdate)}>立即重启安装</button>}
+        <button disabled={busyAction !== null} onClick={() => void runAction('autolaunch', toggleAutoLaunch)}>{busyAction === 'autolaunch' ? '切换中...' : '切换开机自启'}</button>
+        <button disabled={busyAction !== null} onClick={() => void runAction('restart', restartApi)}>{busyAction === 'restart' ? '重启中...' : '重启 API'}</button>
+        <button disabled={busyAction !== null} onClick={() => void runAction('check', checkUpdates)}>{busyAction === 'check' ? '检查中...' : '检查更新'}</button>
+        {updateAvailable !== null && !updateStatus.includes('下载中') && !updateStatus.includes('已下载') && <button disabled={busyAction !== null} onClick={() => void runAction('download', downloadUpdate)}>{busyAction === 'download' ? '下载中...' : '下载更新'}</button>}
+        {updateStatus.includes('已下载') && <button disabled={busyAction !== null} onClick={() => void runAction('install', installUpdate)}>{busyAction === 'install' ? '安装中...' : '立即重启安装'}</button>}
       </div>
       {updateStatus && <p className="info">{updateStatus}</p>}
       {updatePercent !== null && <Progress value={updatePercent} />}
