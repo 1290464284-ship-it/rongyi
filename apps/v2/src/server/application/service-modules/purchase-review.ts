@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams, type DbParam } from '../../infrastructure/tenant';
+import { keysetCondition, keysetOrder, nextCursorFrom } from '../../infrastructure/keyset';
 import { trackResourceWrite } from '../../infrastructure/write-tracking';
 import type { AppContext } from '../../../domain/contracts';
 
@@ -34,8 +35,8 @@ export class PurchaseReviewService {
    */
   list(
     context: AppContext,
-    options?: { reviewStatus?: string; page?: number; pageSize?: number },
-  ): { items: Array<Record<string, unknown>>; total: number; page: number; pageSize: number; truncated?: boolean } {
+    options?: { reviewStatus?: string; page?: number; pageSize?: number; cursor?: string | null },
+  ): { items: Array<Record<string, unknown>>; total: number; page: number; pageSize: number; truncated?: boolean; nextCursor?: string | null } {
     const reviewStatus = options?.reviewStatus?.trim() ?? '';
     if (reviewStatus && !(PURCHASE_REVIEW_STATUSES as readonly string[]).includes(reviewStatus)) {
       throw new ValidationError('reviewStatus 必须为 PENDING/SUBMITTED/APPROVED/REJECTED 之一');
@@ -55,17 +56,28 @@ export class PurchaseReviewService {
     const total = Number((this.db.prepare(
       `SELECT COUNT(*) AS total FROM PurchaseOrder po ${where}`,
     ).get(...baseParams) as { total: number }).total);
+    // S-2 keyset：两模式统一按 (createdAt DESC, id DESC) 排序，恒取 pageSize+1 行并回传 nextCursor。
+    const keyset = { columns: [{ column: 'po.createdAt', key: 'createdAt' }], idColumn: 'po.id', direction: 'DESC' as const };
+    const cursorCondition = keysetCondition(options?.cursor, keyset);
+    const hasCursor = cursorCondition.where !== '';
     const rows = this.db.prepare(
       `SELECT po.*, s.name AS supplierName,
               (SELECT COUNT(*) FROM PurchaseOrderItem poi
                 WHERE poi.orderId = po.id AND poi.deletedAt IS NULL) AS itemsCount
        FROM PurchaseOrder po
        LEFT JOIN Supplier s ON s.id = po.supplierId AND s.deletedAt IS NULL
-       ${where}
-       ORDER BY po.createdAt DESC
-       LIMIT ? OFFSET ?`,
-    ).all(...baseParams, pageSize, offset) as Array<Record<string, unknown>>;
-    return { items: rows, total, page, pageSize, truncated: total > offset + rows.length };
+       ${where}${cursorCondition.where}
+       ${keysetOrder(keyset)}
+       LIMIT ${pageSize + 1} OFFSET ${hasCursor ? 0 : offset}`,
+    ).all(...baseParams, ...cursorCondition.params) as Array<Record<string, unknown>>;
+    return {
+      items: rows.slice(0, pageSize),
+      total,
+      page,
+      pageSize,
+      truncated: total > offset + rows.slice(0, pageSize).length,
+      nextCursor: nextCursorFrom(rows, pageSize, keyset),
+    };
   }
 
   /** 提交审核：PENDING → SUBMITTED。 */

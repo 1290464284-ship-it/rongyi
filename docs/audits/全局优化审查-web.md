@@ -130,3 +130,56 @@
 - **W-12 ID 截断统一**：`InventoryWorkflowPage` 单号/库存项目列 `slice(0,14/12)` → `slice(0,8)`。
 - **W-9 评估结论（不迁移）**：各模块私有字典（PRESCRIPTION_STATUS / REVIEW_STATUS / EDIT_STATUS / CATEGORY_TYPE / PHASE / REPORT_TYPE / DICT_TYPE / PLAN_DISCOUNT / TYPE 等）均为单域专用、键集与 `lib/labels` 无重复；真正重复的 followUpStatus 双文案已在 §6 轮收敛。为避免单域常量搬迁的无价值 churn，维持模块内定义。
 - 另经核：`imaging.type` 与 `CephalometricFormFields.templateId` 为自由文本字段（无枚举源），保留文本输入（对应 §2 的 W-4 项，select 化仅适用于 Plan/Cephalometric 的 status）。
+
+---
+
+## 8. 执行记录（W-6 对账与远程选择去重）
+
+对应 §2 的两处重复实现，行为等价、保持测试全绿。
+
+### 1. 明细对账去重
+
+- 新建 `apps/v2/src/web/lib/reconcile.ts`：泛型 `reconcileItems<T extends ReconcileItem>({ endpoint, orderId, items, isValid?, toPatch?, toPost? })`。统一「fetchAllPages → 按 id 对账 → PATCH/POST/DELETE」主流程；`quantity`/`unitPrice`/`subtotal` 及 POST 的 `orderId`/`requestId` 由共享实现注入。
+- `purchase-orders/api.ts` 的 `reconcilePurchaseItems` 与 `processing-orders/items.ts` 的 `reconcileProcessingItems` 改为调用共享实现；两处差异（采购无 name 必填校验、采购 `itemId`/name 回退「自定义项目」、加工 `status: 'DRAFT'`）通过 `isValid`/`toPatch`/`toPost` 回调保留，删除顺序不变。
+
+### 2. 远程搜索选择去重
+
+- 新建 `apps/v2/src/web/hooks/use-remote-search.ts`：内部处理 debounce/搜索请求/翻页累计/页数上限（10 页）/作用域重置与渲染期累计。
+- `components/FormBuilder.tsx` 的 `RelationSelect` 与 `components/searchable-select.tsx` 的 `SearchableSelect` 改为基于该 hook；刻意差异经参数保留：`pageSize`、`keepPreviousData`（RelationSelect 翻页占位保留上一页）、`trimSearch`（SearchableSelect trim）、`mergeMode`（replace/merge 两种累计策略）、`canLoadMore`（`page*pageSize<total` vs `total>loaded.length`）。
+
+### 验证
+
+- 受影响 spec：purchase-orders（api/form/ReviewRowActions/PurchaseOrderFormFields/ReviewSummaryBar）+ processing-orders + components（FormBuilder/searchable-select/ResourcePage）—— **9 个文件 / 99 个用例全绿**。
+- `pnpm --filter @dental/v2 exec tsc -p tsconfig.web.json --noEmit` —— **通过**。
+- 本次新增/改动文件 `eslint` —— **零错误**。
+- 说明：`pnpm --filter @dental/v2 typecheck` 与 `run lint` 的整体退出码仍受仓库内其它任务进行中的改动影响（server `system.ts`/`workflow.ts` 的 `cursor`、scripts/server 若干 unused），均非本次 W-6 引入。
+
+---
+
+## 9. 执行记录（W-11 大文件拆分）
+
+对应 §3 单文件超 300 行的职责拆分（仅搬移代码 + 调整 import，行为零变化）。从未被占用的候选中按「行数最多 + 拆分收益大 + 风险低」选 4 个：`UsersPage`、`ImagingPage`、`DispenseNarcoticPanel`、`PatientsPage`（`FinanceWorkflowPage` 仅 139 行，跳过）。
+
+### 拆分清单（行数口径：`git show HEAD:<file> | Measure-Object -Line` vs 当前工作树同法）
+
+| 主文件 | 拆分前 | 拆分后 | 新文件（均在原目录或 lib/） |
+| --- | --- | --- | --- |
+| `pages/system/UsersPage.tsx` | 432 | 277 | `users-types.ts`、`users-constants.ts`、`users-columns.tsx`、`UserFormDialog.tsx`、`PermissionDialog.tsx`（同目录） |
+| `pages/clinical/ImagingPage.tsx` | 405 | 122 | `imaging/ImagingCategoryPanel.tsx`、`imaging/ImagingComparePanel.tsx` |
+| `dispense/DispenseNarcoticPanel.tsx` | 355 | 198 | `dispense/narcotic-columns.tsx`、`dispense/NarcoticEditDialog.tsx` |
+| `pages/patients/PatientsPage.tsx` | 326 | 117 | `patients-types.ts`、`patients-constants.ts`、`patients-format.ts`、`patients-columns.tsx`、`PatientFormFields.tsx`（同目录） |
+
+拆分方式：
+- **UsersPage**：角色/权限字典 → `users-constants.ts`；类型与表单初值 → `users-types.ts`；列定义下沉为 `userColumns({...})` 工厂（回调注入，页面不再内联列）；新建/编辑表单弹窗 → `UserFormDialog`；权限弹窗 → `PermissionDialog`。
+- **ImagingPage**：影像分类管理（分类表单 + 增删改/启停 handlers + 删除确认，查询仍在页面并按 `categories/loading/error/onRetry/onChanged` 传入）→ `ImagingCategoryPanel`；影像对比工具（自有查询与选择状态，自包含）→ `ImagingComparePanel`（与 CrudPage 列表共享的 `['imaging',1,'']` 缓存键不变）。
+- **DispenseNarcoticPanel**：列表列定义 → `narcoticColumns({ onEdit, onDelete })` 工厂；编辑弹窗 → `NarcoticEditDialog`。
+- **PatientsPage**：列定义 → `patients-columns.tsx`；字典常量/类型/多行字段工具函数（`splitLines`/`joinLines`）分别下沉；`renderForm` JSX → `PatientFormFields`（`form`/`update` 透传）。
+
+### 验证
+
+- 页面 spec：`UsersPage.spec.tsx`(35) + `ImagingPage.spec.tsx`(33) + `DispenseNarcoticPanel.spec.tsx`(6) + `PatientsPage.spec.tsx`(15) —— **89/89 通过**。
+- `pnpm --filter @dental/v2 typecheck`：web 侧仅 `components/FormBuilder.tsx`（「其它任务在用」的进行中改动）报缺 `useState`/`useQuery`/`apiRequest`/`Page` 导入，本次 4 页与 14 个新文件**零类型错误**；server 侧 `system.ts`/`workflow.ts` 的 `cursor` 报错为其它任务进行中的 keyset 分页改动，非本次引入。
+- `pnpm --filter @dental/v2 run lint`：仅 `scripts/disaster-drill.mjs`、`server/.../dispense.ts`、`server/.../refund-flow.ts`（其它任务在改）报 unused，本次拆分文件**零 lint 错误**。
+- `pnpm --filter @dental/v2 run knip`：仅 `server/infrastructure/keyset-scratch.ts` 与 `hooks/use-remote-search.ts` 的 `RemoteSearchMergeMode`（其它任务在改）报未用；本次新增导出全部被引用，**无未用导出**。
+
+> 说明：typecheck/lint/knip 的整体退出码受仓库内其它任务进行中的改动影响（server keyset/cursor 分页、FormBuilder/use-remote-search 收敛），上述报错均落在 server 目录或「其它任务在用」文件，本次拆分未触碰。

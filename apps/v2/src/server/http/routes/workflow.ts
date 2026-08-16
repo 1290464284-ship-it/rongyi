@@ -296,7 +296,8 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
 
   app.get('/api/v2/notifications', wrapAsync(async (req, res) => {
       const { page, pageSize } = parsePagination(req);
-      res.json({ success: true, data: notifications.list(req.context!.userId, req.context!.clinicId, { page, pageSize }) });
+      const cursor = typeof req.query.cursor === 'string' && req.query.cursor !== '' ? String(req.query.cursor) : null;
+      res.json({ success: true, data: notifications.list(req.context!.userId, req.context!.clinicId, { page, pageSize, cursor }) });
   }));
 
   app.patch('/api/v2/notifications/:id/read', wrapAsync(async (req, res) => {
@@ -329,12 +330,14 @@ export function registerWorkflowRoutes(app: Express, deps: RouteDependencies): v
       if (rawScope !== undefined && !['overdue', 'today', 'upcoming', 'all'].includes(rawScope)) {
         throw new ValidationError('Follow-up scope must be overdue, today, upcoming, or all');
       }
+      const cursor = typeof req.query.cursor === 'string' && req.query.cursor !== '' ? String(req.query.cursor) : null;
       res.json({
         success: true,
         data: followUps.reminders(req.context!, {
           page,
           pageSize,
           scope: rawScope as 'overdue' | 'today' | 'upcoming' | 'all' | undefined,
+          cursor,
         }),
       });
   }));

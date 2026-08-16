@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { simAdminPassword } from './lib/sim-admin.mjs';
 import { pickFreePort } from './lib/smoke-runtime.mjs';
+import { assert } from './lib/drill-runtime.mjs';
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const serverScript = path.join(appRoot, 'dist-electron', 'server.cjs');
@@ -100,10 +101,9 @@ async function request(port, pathname, options = {}, token = null) {
   return { status: response.status, body };
 }
 
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
-}
-
+// 本 drill 是「多进程 + 每端口参数化」场景（children 数组 + 端口复用 + 不同的
+// logDir/backupDir 布局），waitForApi/request/startApi 的签名与单实例
+// createDrill 不匹配，故仅复用 lib/drill-runtime.mjs 的 assert，其余保留原样。
 try {
   fs.mkdirSync(dataDir, { recursive: true });
   fs.mkdirSync(logDir, { recursive: true });

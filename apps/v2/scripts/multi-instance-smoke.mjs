@@ -21,6 +21,10 @@ if (!fs.existsSync(serverScript)) {
   process.exit(1);
 }
 
+// 本 smoke 是「双实例 + 共享 SQLite」场景：baseEnv/waitForApi/request/startServer
+// 全部按 port 参数化，且每个进程需要独立的 stderr 缓冲（stderrBuffers），与单实例
+// createDrill 的签名不匹配，故保留本地进程管理，仅复用 lib/smoke-runtime.mjs 的
+// pickFreePort。
 const processes = [];
 const stderrBuffers = new Map();
 

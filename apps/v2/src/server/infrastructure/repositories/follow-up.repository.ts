@@ -2,6 +2,7 @@
 import type Database from 'better-sqlite3';
 import { SystemClock } from '../clock';
 import { tenantAnd } from '../tenant';
+import { keysetCondition, keysetOrder, nextCursorFrom } from '../keyset';
 import { trackResourceWrite } from '../write-tracking';
 import type { FollowUpRecord, FollowUpRepository, WechatMessageRepository } from '../../application/ports';
 
@@ -10,8 +11,8 @@ export class SqliteFollowUpRepository implements FollowUpRepository {
 
   reminders(
     clinicId?: string | null,
-    options?: { page?: number; pageSize?: number; scope?: 'overdue' | 'today' | 'upcoming' | 'all' },
-  ): { items: Array<Record<string, unknown>>; total: number; page: number; pageSize: number; truncated?: boolean } {
+    options?: { page?: number; pageSize?: number; scope?: 'overdue' | 'today' | 'upcoming' | 'all'; cursor?: string | null },
+  ): { items: Array<Record<string, unknown>>; total: number; page: number; pageSize: number; truncated?: boolean; nextCursor?: string | null } {
     const today = new SystemClock().clinicDate();
     const future = new SystemClock().clinicDate(Date.now() + 14 * 86_400_000);
     const rawPage = Number(options?.page);
@@ -49,16 +50,27 @@ export class SqliteFollowUpRepository implements FollowUpRepository {
     const total = Number((this.db.prepare(
       `SELECT COUNT(*) AS total FROM FollowUp F ${where}`,
     ).get(...params) as { total: number }).total);
+    // S-2 keyset：两模式统一按 (planDate ASC, id ASC) 排序，恒取 pageSize+1 行并回传 nextCursor。
+    const keyset = { columns: [{ column: 'F.planDate', key: 'planDate' }], idColumn: 'F.id', direction: 'ASC' as const };
+    const cursorCondition = keysetCondition(options?.cursor, keyset);
+    const hasCursor = cursorCondition.where !== '';
     const items = this.db.prepare(
       `SELECT F.id, F.patientId, F.planDate, F.content, F.status,
               P.name AS patientName, P.phone AS patientPhone
        FROM FollowUp F
        LEFT JOIN Patient P ON P.id = F.patientId
-       ${where}
-       ORDER BY F.planDate ASC
-       LIMIT ? OFFSET ?`,
-    ).all(...params, pageSize, offset) as Array<Record<string, unknown>>;
-    return { items, total, page, pageSize, truncated: total > offset + items.length };
+       ${where}${cursorCondition.where}
+       ${keysetOrder(keyset)}
+       LIMIT ${pageSize + 1} OFFSET ${hasCursor ? 0 : offset}`,
+    ).all(...params, ...cursorCondition.params) as Array<Record<string, unknown>>;
+    return {
+      items: items.slice(0, pageSize),
+      total,
+      page,
+      pageSize,
+      truncated: total > offset + items.slice(0, pageSize).length,
+      nextCursor: nextCursorFrom(items, pageSize, keyset),
+    };
   }
 
   insert(record: FollowUpRecord): void {

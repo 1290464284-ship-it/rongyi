@@ -17,9 +17,10 @@ export function registerStocktakeRoutes(app: Express, deps: RouteDependencies): 
 
   app.get('/api/v2/stocktakes', wrapAsync(async (req, res) => {
     const { page, pageSize } = parsePagination(req, { defaultPageSize: 200 });
+    const cursor = typeof req.query.cursor === 'string' && req.query.cursor !== '' ? String(req.query.cursor) : null;
     res.json({
       success: true,
-      data: service.list(req.context!, { page, pageSize }),
+      data: service.list(req.context!, { page, pageSize, cursor }),
     });
   }));
 

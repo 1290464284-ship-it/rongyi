@@ -20,8 +20,8 @@ export class FollowUpService {
 
   reminders(
     context: AppContext,
-    options?: { page?: number; pageSize?: number; scope?: 'overdue' | 'today' | 'upcoming' | 'all' },
-  ): { items: Array<Record<string, unknown>>; total: number; page: number; pageSize: number; truncated?: boolean } {
+    options?: { page?: number; pageSize?: number; scope?: 'overdue' | 'today' | 'upcoming' | 'all'; cursor?: string | null },
+  ): { items: Array<Record<string, unknown>>; total: number; page: number; pageSize: number; truncated?: boolean; nextCursor?: string | null } {
     return this.followUpRepository.reminders(context.clinicId, options);
   }
 

@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
+import { keysetCondition, keysetOrder, nextCursorFrom } from '../../infrastructure/keyset';
 import { setInventoryStock } from './inventory-ledger';
 import type { AppContext } from '../../../domain/contracts';
 
@@ -77,8 +78,8 @@ export class StocktakeService {
   /** 盘点单列表（含明细数与差异项数），按创建时间倒序，支持分页。 */
   list(
     context: AppContext,
-    options: { page?: number; pageSize?: number } = {},
-  ): { items: Array<Record<string, unknown>>; total: number; page: number; pageSize: number; truncated?: boolean } {
+    options: { page?: number; pageSize?: number; cursor?: string | null } = {},
+  ): { items: Array<Record<string, unknown>>; total: number; page: number; pageSize: number; truncated?: boolean; nextCursor?: string | null } {
     const rawPage = Number(options.page);
     const rawPageSize = Number(options.pageSize);
     const page = Number.isFinite(rawPage) && rawPage >= 1 ? Math.floor(rawPage) : 1;
@@ -88,6 +89,10 @@ export class StocktakeService {
     const total = Number((this.db.prepare(
       `SELECT COUNT(*) AS total FROM Stocktake s WHERE s.deletedAt IS NULL${clinicWhere}`,
     ).get(...tenantParams(context.clinicId)) as { total: number }).total);
+    // S-2 keyset：两模式统一按 (createdAt DESC, id DESC) 排序，恒取 pageSize+1 行并回传 nextCursor。
+    const keyset = { columns: [{ column: 's.createdAt', key: 'createdAt' }], idColumn: 's.id', direction: 'DESC' as const };
+    const cursorCondition = keysetCondition(options.cursor, keyset);
+    const hasCursor = cursorCondition.where !== '';
     const rows = this.db.prepare(
       `SELECT s.id, s.number, s.status, s.startedById, s.startedAt,
               s.completedById, s.completedAt, s.note,
@@ -96,21 +101,23 @@ export class StocktakeService {
               (SELECT COUNT(*) FROM StocktakeItem si
                 WHERE si.stocktakeId = s.id AND si.deletedAt IS NULL AND si.difference != 0) AS differenceCount
        FROM Stocktake s
-       WHERE s.deletedAt IS NULL${clinicWhere}
-       ORDER BY s.createdAt DESC, s.id
-       LIMIT ? OFFSET ?`,
-    ).all(...tenantParams(context.clinicId), pageSize, offset) as Array<Record<string, unknown>>;
+       WHERE s.deletedAt IS NULL${clinicWhere}${cursorCondition.where}
+       ${keysetOrder(keyset)}
+       LIMIT ${pageSize + 1} OFFSET ${hasCursor ? 0 : offset}`,
+    ).all(...tenantParams(context.clinicId), ...cursorCondition.params) as Array<Record<string, unknown>>;
+    const items = rows.slice(0, pageSize).map((row) => ({
+      ...row,
+      // COUNT(*) 子查询恒返回非空整数
+      itemCount: Number(row.itemCount),
+      differenceCount: Number(row.differenceCount),
+    }));
     return {
-      items: rows.map((row) => ({
-        ...row,
-        // COUNT(*) 子查询恒返回非空整数
-        itemCount: Number(row.itemCount),
-        differenceCount: Number(row.differenceCount),
-      })),
+      items,
       total,
       page,
       pageSize,
-      truncated: total > offset + rows.length,
+      truncated: total > offset + items.length,
+      nextCursor: nextCursorFrom(rows, pageSize, keyset),
     };
   }
 

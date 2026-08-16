@@ -20,9 +20,10 @@ export function registerPurchaseReviewRoutes(app: Express, deps: RouteDependenci
       ? req.query.reviewStatus
       : undefined;
     const { page, pageSize } = parsePagination(req, { defaultPageSize: 200 });
+    const cursor = typeof req.query.cursor === 'string' && req.query.cursor !== '' ? String(req.query.cursor) : null;
     res.json({
       success: true,
-      data: service.list(req.context!, { ...(reviewStatus ? { reviewStatus } : {}), page, pageSize }),
+      data: service.list(req.context!, { ...(reviewStatus ? { reviewStatus } : {}), page, pageSize, cursor }),
     });
   }));
 

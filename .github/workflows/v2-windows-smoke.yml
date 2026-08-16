@@ -90,8 +90,9 @@ jobs:
 
       - name: Packaged UI smoke
         env:
-          V2_ADMIN_PASSWORD: smoke-packaged-ui-001
-          V2_BACKUP_KEY: smoke-packaged-ui-backup-001
+          # T-5：口令按 run 派生，备份密钥走 vars，不再硬编码进仓库。
+          V2_ADMIN_PASSWORD: v2-packaged-admin-${{ github.run_id }}
+          V2_BACKUP_KEY: ${{ vars.V2_BACKUP_KEY }}
         run: pnpm --filter @dental/v2 smoke:packaged-ui
 
       - name: Download previous installer for upgrade smoke
@@ -113,7 +114,7 @@ jobs:
         env:
           V2_PREVIOUS_INSTALLER: ${{ steps.previous-installer.outputs.path }}
           V2_CURRENT_INSTALLER: ${{ steps.current-installer.outputs.path }}
-          V2_ADMIN_PASSWORD: v2-windows-smoke-admin
+          V2_ADMIN_PASSWORD: v2-upgrade-admin-${{ github.run_id }}
         run: |
           powershell -ExecutionPolicy Bypass -File apps/v2/scripts/upgrade-smoke.ps1 `
             -CurrentInstallerPath $env:V2_CURRENT_INSTALLER `

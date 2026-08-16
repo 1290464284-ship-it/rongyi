@@ -1,9 +1,10 @@
-import { spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pickFreePort } from './lib/smoke-runtime.mjs';
+import { createDrill } from './lib/drill-runtime.mjs';
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const serverScript = path.join(appRoot, 'dist-electron', 'server.cjs');
@@ -26,95 +27,24 @@ if (!adminPassword) {
   process.exit(1);
 }
 
-let apiProcess = null;
+const drill = createDrill({
+  appRoot,
+  serverScript,
+  legacyDb,
+  legacySchemaDir,
+  dataDir,
+  backupDir,
+  logDir,
+  port,
+  jwtSecret,
+  backupKey,
+  adminPassword,
+  dbPath,
+  captureStderr: true,
+  readyLabel: 'delivery drill',
+});
 
-function baseEnv() {
-  return {
-    ...process.env,
-    V2_PORT: String(port),
-    V2_HOST: '127.0.0.1',
-    NODE_ENV: 'development',
-    V2_DATA_DIR: dataDir,
-    V2_BACKUP_DIR: backupDir,
-    V2_LOG_DIR: logDir,
-    V2_LEGACY_DB_PATH: legacyDb,
-    V2_LEGACY_SCHEMA_DIR: legacySchemaDir,
-    V2_DB_PATH: dbPath,
-    V2_JWT_SECRET: jwtSecret,
-    V2_BACKUP_KEY: backupKey,
-    V2_ADMIN_PASSWORD: adminPassword,
-  };
-}
-
-function waitForApi(timeoutMs = 30_000) {
-  const startedAt = Date.now();
-  return new Promise((resolve, reject) => {
-    const attempt = async () => {
-      if (Date.now() - startedAt > timeoutMs) {
-        reject(new Error('API did not become ready during delivery drill'));
-        return;
-      }
-      try {
-        const response = await fetch(`http://127.0.0.1:${port}/api/v2/health`, { signal: AbortSignal.timeout(1000) });
-        if (response.ok) {
-          resolve();
-          return;
-        }
-      } catch {
-        // retry
-      }
-      setTimeout(() => void attempt(), 500);
-    };
-    void attempt();
-  });
-}
-
-async function request(pathname, options = {}, token = null) {
-  const headers = { 'content-type': 'application/json', ...(options.headers ?? {}) };
-  if (token) headers.authorization = `Bearer ${token}`;
-  const response = await fetch(`http://127.0.0.1:${port}/api/v2${pathname}`, {
-    ...options,
-    headers,
-  });
-  const body = await response.json().catch(() => null);
-  if (!response.ok || !body?.success) {
-    throw new Error(`${options.method ?? 'GET'} ${pathname}: ${response.status} ${JSON.stringify(body)}`);
-  }
-  return body.data;
-}
-
-async function startApi() {
-  fs.mkdirSync(dataDir, { recursive: true });
-  fs.mkdirSync(backupDir, { recursive: true });
-  fs.mkdirSync(logDir, { recursive: true });
-  apiProcess = spawn(process.execPath, [serverScript], {
-    cwd: appRoot,
-    env: baseEnv(),
-    stdio: ['ignore', 'pipe', 'pipe'],
-    windowsHide: true,
-  });
-  let stderr = '';
-  apiProcess.stderr.on('data', (chunk) => {
-    stderr += String(chunk);
-  });
-  // 崩溃诊断必须保留到 catch 读取；V2_DELIVERY_DRILL_DEBUG 只控制是否打印，不控制是否保留。
-  await waitForApi();
-  return () => stderr;
-}
-
-function stopApi() {
-  return new Promise((resolve) => {
-    if (!apiProcess || apiProcess.killed) {
-      resolve();
-      return;
-    }
-    apiProcess.once('exit', resolve);
-    apiProcess.kill();
-    setTimeout(() => {
-      if (apiProcess && !apiProcess.killed) apiProcess.kill('SIGKILL');
-    }, 5000).unref();
-  });
-}
+const { startApi, stopApi, request, baseEnv, assert } = drill;
 
 function runNodeScript(scriptPath, args = []) {
   const result = spawnSync(process.execPath, [scriptPath, ...args], {
@@ -126,10 +56,6 @@ function runNodeScript(scriptPath, args = []) {
     throw new Error(`${path.basename(scriptPath)} failed: ${result.stderr || result.stdout}`);
   }
   return result.stdout;
-}
-
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
 }
 
 async function main() {

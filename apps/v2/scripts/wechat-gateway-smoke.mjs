@@ -1,8 +1,9 @@
-import { spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import https from 'node:https';
 import os from 'node:os';
 import path from 'node:path';
+import { createDrill } from './lib/drill-runtime.mjs';
 
 process.on('unhandledRejection', (reason) => {
   console.error(reason instanceof Error ? reason.stack ?? reason.message : reason);
@@ -25,39 +26,32 @@ const port = 36000 + Math.floor(Math.random() * 2000);
 const jwtSecret = 'wechat-gateway-secret-0123456789abcdef0123456789abcdef';
 const backupKey = 'wechat-gateway-backup-key-0123456789abcdef';
 const adminPassword = 'WechatGatewaySmoke123!';
-const base = `http://127.0.0.1:${port}/api/v2`;
 
 if (!fs.existsSync(serverScript)) {
   console.error('dist-electron/server.cjs not found. Run electron:compile first.');
   process.exit(1);
 }
 
-let apiProcess = null;
+const drill = createDrill({
+  appRoot,
+  serverScript,
+  legacyDb,
+  legacySchemaDir,
+  dataDir,
+  backupDir,
+  logDir,
+  port,
+  jwtSecret,
+  backupKey,
+  adminPassword,
+  dbPath: path.join(dataDir, 'v2.sqlite'),
+  readyLabel: 'WeChat gateway smoke',
+});
+
+const { startApi, stopApi, request, assert } = drill;
+
 let gateway = null;
 const gatewayRequests = [];
-
-function waitForApi(timeoutMs = 30_000) {
-  const startedAt = Date.now();
-  return new Promise((resolve, reject) => {
-    const attempt = async () => {
-      if (Date.now() - startedAt > timeoutMs) {
-        reject(new Error('API did not become ready during WeChat gateway smoke'));
-        return;
-      }
-      try {
-        const response = await fetch(`${base}/health`, { signal: AbortSignal.timeout(1000) });
-        if (response.ok) {
-          resolve();
-          return;
-        }
-      } catch {
-        // retry
-      }
-      setTimeout(() => void attempt(), 500);
-    };
-    void attempt();
-  });
-}
 
 async function startGateway() {
   const pfxPath = path.join(appRoot, 'certs', 'internal-signing.pfx');
@@ -130,70 +124,15 @@ function stopGateway() {
   });
 }
 
-async function startApi(gatewayPort) {
-  fs.mkdirSync(dataDir, { recursive: true });
-  fs.mkdirSync(backupDir, { recursive: true });
-  fs.mkdirSync(logDir, { recursive: true });
-  apiProcess = spawn(process.execPath, [serverScript], {
-    cwd: appRoot,
-    env: {
-      ...process.env,
-      V2_PORT: String(port),
-      V2_HOST: '127.0.0.1',
-      NODE_ENV: 'development',
-      V2_DATA_DIR: dataDir,
-      V2_BACKUP_DIR: backupDir,
-      V2_LOG_DIR: logDir,
-      V2_LEGACY_DB_PATH: legacyDb,
-      V2_LEGACY_SCHEMA_DIR: legacySchemaDir,
-      V2_DB_PATH: path.join(dataDir, 'v2.sqlite'),
-      V2_JWT_SECRET: jwtSecret,
-      V2_BACKUP_KEY: backupKey,
-      V2_ADMIN_PASSWORD: adminPassword,
+async function main() {
+  try {
+    const gatewayPort = await startGateway();
+    await startApi({
       V2_WECHAT_API_URL: `https://127.0.0.1:${gatewayPort}`,
       V2_WECHAT_APP_ID: 'mock-wechat-app',
       V2_WECHAT_APP_SECRET: 'mock-wechat-secret',
       NODE_TLS_REJECT_UNAUTHORIZED: '0',
-    },
-    stdio: ['ignore', 'inherit', 'inherit'],
-    windowsHide: true,
-  });
-  await waitForApi();
-}
-
-function stopApi() {
-  return new Promise((resolve) => {
-    if (!apiProcess || apiProcess.killed) {
-      resolve();
-      return;
-    }
-    apiProcess.once('exit', resolve);
-    apiProcess.kill();
-    setTimeout(() => {
-      if (apiProcess && !apiProcess.killed) apiProcess.kill('SIGKILL');
-    }, 5000).unref();
-  });
-}
-
-async function request(pathname, options = {}, token = null) {
-  const headers = { 'content-type': 'application/json', ...(options.headers ?? {}) };
-  if (token) headers.authorization = `Bearer ${token}`;
-  const response = await fetch(`${base}${pathname}`, { ...options, headers });
-  const body = await response.json().catch(() => null);
-  if (!response.ok || !body?.success) {
-    throw new Error(`${options.method ?? 'GET'} ${pathname}: ${response.status} ${JSON.stringify(body)}`);
-  }
-  return body.data;
-}
-
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
-}
-
-async function main() {
-  try {
-    const gatewayPort = await startGateway();
-    await startApi(gatewayPort);
+    });
 
     const login = await request('/auth/login', {
       method: 'POST',

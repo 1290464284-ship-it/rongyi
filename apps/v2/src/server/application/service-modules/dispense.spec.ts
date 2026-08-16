@@ -610,6 +610,36 @@ describe('DispenseService', () => {
       expect(() => service().list(context, { status: 'BOGUS' })).toThrow(ValidationError);
     });
 
+    it('paginates with keyset cursors without overlap or gaps', async () => {
+      insertItem('keyset-item-1', 100, 0);
+      for (let index = 0; index < 5; index += 1) {
+        service().create({
+          number: `KEYSET-${index}`,
+          patientId: 'patient-demo-001',
+          items: [{ itemId: 'keyset-item-1', quantity: 1 }],
+        }, context);
+      }
+      const pageSize = 2;
+      // 本文件共享 DB（beforeAll）：快照过滤出本用例 5 行，再以「原始页末行」为游标走全
+      // 局 keyset 序逐页对账（PF 前缀行可能占满首页探针行，不能用固定下标取游标）。
+      const onlyKeyset = (rows: Array<Record<string, unknown>>) =>
+        rows.filter((row) => String(row.number ?? '').startsWith('KEYSET-'));
+      const snapshot = onlyKeyset(service().list(context, { page: 1, pageSize: 500, cursor: null }));
+      expect(snapshot).toHaveLength(5);
+      const cursorOf = (row: Record<string, unknown>) => `${String(row.createdAt ?? '')}|${String(row.id ?? '')}`;
+      const walked: string[] = [];
+      let cursor: string | null = null;
+      for (let page = 1; page <= 20; page += 1) {
+        const raw = service().list(context, { page, pageSize, cursor }) as Array<Record<string, unknown>>;
+        walked.push(...onlyKeyset(raw).slice(0, pageSize).map((row) => String(row.id)));
+        if (raw.length <= pageSize) break;
+        cursor = cursorOf(raw[raw.length - 1]);
+      }
+      // 游标走全全局序后，KEYSET 行与快照完全一致、不重不漏
+      expect(walked).toEqual(snapshot.map((row) => String(row.id)));
+      expect(new Set(walked).size).toBe(5);
+    });
+
     it('returns detail with items; missing dispense throws NotFoundError', async () => {
       const created = service().create({
         number: 'PF-301',

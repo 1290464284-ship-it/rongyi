@@ -541,9 +541,10 @@ describe('RefundFlowService', () => {
     expect(() => service.list(context, { page: 1.5 })).toThrow(ValidationError);
     expect(() => service.list(context, { pageSize: 1.5 })).toThrow(ValidationError);
     expect(() => service.list(context, { page: -1 })).toThrow(ValidationError);
-    // pageSize 恰好 1 合法；500 钳制到 200 上限
-    expect(service.list(context, { page: 1, pageSize: 1 }).length).toBeLessThanOrEqual(1);
-    expect(service.list(context, { page: 1, pageSize: 500 }).length).toBeLessThanOrEqual(200);
+    // pageSize 恰好 1 合法；500 钳制到 200 上限。
+    // S-2 起服务端恒取 pageSize+1 行（多取行为路由生成 nextCursor 的探针行）。
+    expect(service.list(context, { page: 1, pageSize: 1 }).length).toBeLessThanOrEqual(2);
+    expect(service.list(context, { page: 1, pageSize: 500 }).length).toBeLessThanOrEqual(201);
 
     // offset 语义：第 2 页应跳过前 pageSize 条（相对 total 断言，免受共享库累积影响）
     for (let i = 0; i < 3; i += 1) {
@@ -551,8 +552,8 @@ describe('RefundFlowService', () => {
       await chargeService.refund(chargeId, 10 + i, `分页-${i}`, context);
     }
     const total = service.count(context);
-    const page1 = service.list(context, { page: 1, pageSize: 2 });
-    const page2 = service.list(context, { page: 2, pageSize: 2 });
+    const page1 = service.list(context, { page: 1, pageSize: 2 }).slice(0, 2);
+    const page2 = service.list(context, { page: 2, pageSize: 2 }).slice(0, 2);
     expect(page1.length).toBe(2);
     expect(page2.length).toBe(Math.min(2, Math.max(0, total - 2)));
     expect(page1.map((row) => row.id).some((id) => page2.map((row) => row.id).includes(String(id)))).toBe(false);

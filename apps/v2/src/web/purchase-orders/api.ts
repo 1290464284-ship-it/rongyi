@@ -1,58 +1,30 @@
-import { apiRequest, fetchAllPages } from '../lib/api';
-import { toCents } from '../lib/format';
+import { apiRequest } from '../lib/api';
 import { errorMessage } from '../lib/messages';
 import type { ToastKind } from '../lib/toast-context';
-import type { PurchaseItemForm, PurchaseOrderItemRow } from './types';
+import { reconcileItems } from '../lib/reconcile';
+import type { PurchaseItemForm } from './types';
 
 /** 编辑保存时的明细 reconcile：有 id 的行 PATCH，新行 POST（带 orderId），被移除的行 DELETE。 */
 export async function reconcilePurchaseItems(
   orderId: string,
   items: PurchaseItemForm[],
 ): Promise<void> {
-  const existing = await fetchAllPages<PurchaseOrderItemRow>(
-    `/resources/purchaseOrderItems?orderId=${orderId}`,
-  );
-  const existingById = new Map(existing.map((row) => [String(row.id), row]));
-  const keptIds = new Set<string>();
-  for (const item of items) {
-    if (!item.quantity || !item.unitPrice) continue;
-    const quantity = Number(item.quantity);
-    const unitPrice = toCents(item.unitPrice);
-    if (!(quantity > 0) || !(unitPrice >= 0)) continue;
-    if (item.id && existingById.has(item.id)) {
-      keptIds.add(item.id);
-      await apiRequest(`/resources/purchaseOrderItems/${item.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          itemId: item.itemId || undefined,
-          name: item.name.trim() || '自定义项目',
-          spec: item.spec.trim() || undefined,
-          quantity,
-          unitPrice,
-          subtotal: Math.round(unitPrice * quantity),
-        }),
-      });
-    } else {
-      await apiRequest('/resources/purchaseOrderItems', {
-        method: 'POST',
-        body: JSON.stringify({
-          orderId,
-          itemId: item.itemId || undefined,
-          name: item.itemId ? (item.name.trim() || '自定义项目') : '自定义项目',
-          spec: item.spec.trim() || undefined,
-          quantity,
-          unitPrice,
-          subtotal: Math.round(unitPrice * quantity),
-          requestId: crypto.randomUUID(),
-        }),
-      });
-    }
-  }
-  for (const row of existing) {
-    if (!keptIds.has(String(row.id))) {
-      await apiRequest(`/resources/purchaseOrderItems/${String(row.id)}`, { method: 'DELETE' });
-    }
-  }
+  await reconcileItems({
+    endpoint: '/resources/purchaseOrderItems',
+    orderId,
+    items,
+    isValid: (item) => Boolean(item.quantity) && Boolean(item.unitPrice),
+    toPatch: (item) => ({
+      itemId: item.itemId || undefined,
+      name: item.name.trim() || '自定义项目',
+      spec: item.spec.trim() || undefined,
+    }),
+    toPost: (item) => ({
+      itemId: item.itemId || undefined,
+      name: item.itemId ? (item.name.trim() || '自定义项目') : '自定义项目',
+      spec: item.spec.trim() || undefined,
+    }),
+  });
 }
 
 export async function reviewAction(
