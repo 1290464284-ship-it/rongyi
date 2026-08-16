@@ -36,6 +36,8 @@
     "test:coverage:web": "vitest run src/web --coverage --config vite.web-coverage.config.ts",
     "smoke:api": "node scripts/api-smoke.mjs",
     "smoke:ui": "node scripts/ui-smoke.mjs",
+    "shots:ui-baseline": "node scripts/ui-baseline-shots.mjs",
+    "shots:a1-probe": "node scripts/a1-probe.mjs",
     "smoke:electron": "node scripts/electron-smoke.mjs",
     "smoke:packaged-ui": "node scripts/packaged-ui-smoke.mjs",
     "smoke:packaged-ui-simulated": "node scripts/packaged-ui-simulated-smoke.mjs",
