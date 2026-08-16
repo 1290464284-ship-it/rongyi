@@ -255,9 +255,16 @@ export function AppointmentsPage({ initialSearch }: { initialSearch?: string } =
           ariaLabel="搜索预约"
         />
       </div>
+      {/* B6：/doctors 加载失败时行内提示并支持重试，避免静默空列表 */}
+      {doctors.isError && (
+        <div className="query-section-error">
+          <p className="error">医生列表加载失败</p>
+          <button type="button" className="btn-secondary" onClick={() => void doctors.refetch()}>重试</button>
+        </div>
+      )}
       <form className="inline-form" onSubmit={create}>
         <SearchableSelect resource="patients" value={patientId} onChange={setPatientId} ariaLabel="患者" placeholder="选择患者" />
-        <select aria-label="医生" value={doctorId} onChange={(event) => setDoctorId(event.target.value)}>
+        <select aria-label="医生" value={doctorId} onChange={(event) => setDoctorId(event.target.value)} disabled={doctors.isError}>
           <option value="">选择医生</option>
           {doctors.data?.map((row) => (
             <option key={row.id} value={row.id}>{String(row.name ?? row.id)}</option>
@@ -293,8 +300,14 @@ export function AppointmentsPage({ initialSearch }: { initialSearch?: string } =
 
       <Dialog open={editingAppointment !== null} title="编辑预约" onClose={closeEditAppointment}>
         <form onSubmit={saveEditAppointment}>
+          {doctors.isError && (
+            <div className="query-section-error">
+              <p className="error">医生列表加载失败</p>
+              <button type="button" className="btn-secondary" onClick={() => void doctors.refetch()}>重试</button>
+            </div>
+          )}
           <SearchableSelect resource="patients" value={editForm.patientId} onChange={(value) => setEditForm((current) => ({ ...current, patientId: value }))} ariaLabel="患者" placeholder="选择患者（预约患者）" />
-          <select aria-label="医生" value={editForm.doctorId} onChange={(event) => setEditForm((current) => ({ ...current, doctorId: event.target.value }))}>
+          <select aria-label="医生" value={editForm.doctorId} onChange={(event) => setEditForm((current) => ({ ...current, doctorId: event.target.value }))} disabled={doctors.isError}>
             <option value="">选择医生</option>
             {doctors.data?.map((row) => (
               <option key={row.id} value={row.id}>{String(row.name ?? row.id)}</option>
