@@ -41,6 +41,7 @@
     "shots:ui-band": "node scripts/ui-band-analysis.mjs",
     "shots:a1-probe": "node scripts/a1-probe.mjs",
     "shots:ui-viewport": "node scripts/ui-viewport-check.mjs",
+    "verify:desktop-sync": "node scripts/verify-desktop-sync.mjs",
     "styles:tokenize": "node scripts/tokenize-styles.mjs",
     "smoke:electron": "node scripts/electron-smoke.mjs",
     "smoke:packaged-ui": "node scripts/packaged-ui-smoke.mjs",

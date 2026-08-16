@@ -518,4 +518,10 @@ A15（DataTable 真虚拟化）、A17（hub-tabs Unicode 还原）、C 级 busy 
 
 **至此原提示词阶段 0-7 全部完成**：审计清单（阶段0-1）→ 设计方向（2）→ token 方案（3）→ 交互一致性（4，经 A4/A13/C13 等）→ 桌面端细节（5）→ 实施（6，两轮 15 个提交）→ 视觉验证与护栏（7，同会话截图对比 + R14 基线目录）。
 
+### 11.4 桌面端完整同步核验（verify:desktop-sync）
+
+- **方法**：`scripts/verify-desktop-sync.mjs` 对 dist-web 与打包 asar 双端做 35 项正向标记（覆盖第二轮 A1-A19/B1-B5/C2/C6/C7/D1/D2、二期 A17/C 级文案/C1/C4/C10/C13/B3/B6/A3-A11/A9/A5 合并/A15、阶段 5 滚动条与收尾项）+ 12 项负向标记（孤儿 CSS、旧看板/时间线体系、fill-mode 回退形式、Unicode 转义形式、原生弹窗调用）的字节级探针。
+- **结果**：dist-web **47/47 全过**；asar **46/47**，唯一「命中」是第三方 `react-router` 包内未被使用的 `useBlocker` 死代码中的 `window.confirm`（生产依赖随 asar 打入、主进程不使用；渲染层 dist-web 中已被 tree-shake 剔除）——与我们的代码无关。
+- 结论：**桌面安装包（release-v2）与当前源码逐项一致**，覆盖全部轮次改动，无任何漏打包项。注：react-router 可考虑移入 devDependencies 以减小安装包（非同步问题，另行决策）。
+
 
