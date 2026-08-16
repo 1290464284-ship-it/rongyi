@@ -17,16 +17,22 @@ if (!adminPassword) {
   process.exit(1);
 }
 
-const browser = await chromium.launch({ headless: true });
 const resultsDir = path.resolve('apps/v2/test-results');
 const tracePath = path.join(resultsDir, 'ui-smoke-trace.zip');
 const screenshotPath = path.join(resultsDir, 'ui-smoke-failure.png');
-const context = await browser.newContext();
-const page = await context.newPage();
-await context.tracing.start({ screenshots: true, snapshots: true });
+let browser = null;
+let context = null;
+let page = null;
 let failed = false;
 
 try {
+  // 浏览器/上下文/页面创建也纳入 try/finally：launch 之后 context 创建失败
+  // 时同样能关闭 Chromium，不泄漏进程。
+  browser = await chromium.launch({ headless: true });
+  context = await browser.newContext();
+  page = await context.newPage();
+  await context.tracing.start({ screenshots: true, snapshots: true });
+
   await page.goto(`${base}/#/login`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(1000);
   const title = await page.title();
@@ -89,14 +95,20 @@ try {
   console.log('UI smoke passed');
 } catch (error) {
   failed = true;
-  await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {});
+  if (page) {
+    await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {});
+  }
   throw error;
 } finally {
-  if (failed) {
-    await context.tracing.stop({ path: tracePath }).catch(() => {});
-  } else {
-    await context.tracing.stop().catch(() => {});
+  if (context) {
+    if (failed) {
+      await context.tracing.stop({ path: tracePath }).catch(() => {});
+    } else {
+      await context.tracing.stop().catch(() => {});
+    }
+    await context.close().catch(() => {});
   }
-  await context.close();
-  await browser.close();
+  if (browser) {
+    await browser.close().catch(() => {});
+  }
 }

@@ -98,7 +98,8 @@ export function UsersPage() {
   const [page, setPage] = useState(1);
 
   const me = useQuery({
-    queryKey: ['auth-me'],
+    // 与 Layout 同端点共享缓存键，避免重复请求 /auth/me
+    queryKey: ['me'],
     queryFn: () => apiRequest<{ role?: string }>('/auth/me'),
   });
   const users = useQuery({

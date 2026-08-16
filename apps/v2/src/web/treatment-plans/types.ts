@@ -82,11 +82,3 @@ export const PLAN_DISCOUNT_LABELS: Record<string, string> = {
   WHOLE: '整单折',
   DOUBLE: '折上折',
 };
-
-export const FOLLOW_UP_LABELS: Record<string, string> = {
-  NONE: '无',
-  PENDING: '待回访',
-  HORIZONTAL_SHOULD: '横向应访',
-  HORIZONTAL_DONE: '横向已访',
-  LOST: '流失',
-};

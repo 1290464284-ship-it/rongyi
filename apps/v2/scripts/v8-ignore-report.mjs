@@ -48,7 +48,21 @@ if (!fs.existsSync(baselinePath)) {
 }
 const baseline = JSON.parse(fs.readFileSync(baselinePath, 'utf8'));
 console.log(`v8 ignore markers: ${total} (baseline ${baseline.total})`);
-if (total > baseline.total) {
+const baselinePerFile = (baseline.perFile ?? {}) as Record<string, number>;
+// 单文件 ratchet：A 文件删除、B 文件新增等量标记同样会被拦截，
+// 防止把关键文件（router/repository 等授权与数据访问路径）的新排除混过去。
+const violations: string[] = [];
+for (const [file, count] of Object.entries(perFile)) {
+  const allowed = baselinePerFile[file] ?? 0;
+  if (count > allowed) {
+    violations.push(`${file}: ${count} markers (baseline ${allowed})`);
+  }
+}
+if (total > baseline.total || violations.length > 0) {
+  if (violations.length > 0) {
+    console.error('per-file v8 ignore marker increase (baseline allows none without registration):');
+    for (const line of violations) console.error(`  ${line}`);
+  }
   console.error(
     `v8 ignore marker count ${total} exceeds committed baseline ${baseline.total}; ` +
       'remove markers or document rationale in docs/architecture/coverage-exclusions.md ' +

@@ -1,6 +1,7 @@
 import { chromium } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
+import { simAdminPassword } from './lib/sim-admin.mjs';
 
 // A1 精确定位：从 modal-backdrop 向上遍历祖先链，找出持有 transform/contain 的祖先，
 // 并验证顶栏在弹窗打开期间是否可交互（elementFromPoint 命中测试）。
@@ -11,7 +12,7 @@ process.on('unhandledRejection', (reason) => {
 });
 
 const base = process.env.V2_WEB_URL ?? 'http://localhost:5180';
-const adminPassword = process.env.V2_ADMIN_PASSWORD ?? 'v2-sim-admin-password';
+const adminPassword = simAdminPassword();
 const outDir = path.resolve(process.env.UI_BASELINE_DIR ?? path.join(import.meta.dirname, '..', 'test-results', 'ui-baseline', 'before'));
 fs.mkdirSync(outDir, { recursive: true });
 

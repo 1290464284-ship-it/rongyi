@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../lib/api';
-import { MissingSelectOption, PagePager, SearchableSelect } from '../components';
+import { formatDateTime } from '../lib/format';
+import { DoctorSelect, MissingSelectOption, PagePager, SearchableSelect } from '../components';
 import type { Page } from '../lib/types';
 import type { RecordForm } from './types';
 
@@ -15,10 +16,6 @@ export function RecordFormFields({ form, update }: { form: RecordForm; update: (
     setPrevPatientId(form.patientId);
     setVisitPage(1);
   }
-  const doctors = useQuery({
-    queryKey: ['record-doctors'],
-    queryFn: () => apiRequest<Array<Record<string, unknown>>>('/doctors'),
-  });
   const visits = useQuery({
     queryKey: ['record-visits', form.patientId, visitPage],
     queryFn: async () => {
@@ -32,9 +29,7 @@ export function RecordFormFields({ form, update }: { form: RecordForm; update: (
     // 仅在同一患者的翻页间复用上一页数据，患者切换/清空时不再显示旧患者就诊。
     placeholderData: (previous) => (previous && visitsPatientRef.current === form.patientId ? previous : undefined),
   });
-  const doctorRows = doctors.data ?? [];
   const visitRows = visits.data?.items ?? [];
-  const doctorMissing = form.doctorId !== '' && !doctors.isLoading && !doctorRows.some((row) => String(row.id) === form.doctorId);
   const visitMissing = form.visitId !== '' && !visits.isLoading && !visitRows.some((row) => String(row.id) === form.visitId);
   return (
     <>
@@ -51,31 +46,18 @@ export function RecordFormFields({ form, update }: { form: RecordForm; update: (
           placeholder="选择患者"
         />
       </label>
-      {/* B6：/doctors 加载失败时行内提示并支持重试，避免静默空列表 */}
-      {doctors.isError && (
-        <div className="query-section-error">
-          <p className="error">医生列表加载失败</p>
-          <button type="button" className="btn-secondary" onClick={() => void doctors.refetch()}>重试</button>
-        </div>
-      )}
-      <label>
-        医生
-        <select value={form.doctorId} onChange={(event) => update({ doctorId: event.target.value })} disabled={doctors.isError}>
-          <option value="">选择医生</option>
-          {doctorMissing && <MissingSelectOption value={form.doctorId} />}
-          {doctors.data?.map((row) => (
-            <option key={String(row.id)} value={String(row.id)}>{String(row.name ?? row.id)}</option>
-          ))}
-        </select>
-      </label>
+      <DoctorSelect label="医生" value={form.doctorId} onChange={(id) => update({ doctorId: id })} />
       <label>
         关联就诊
         <select value={form.visitId} onChange={(event) => update({ visitId: event.target.value })}>
           <option value="">不关联</option>
           {visitMissing && <MissingSelectOption value={form.visitId} />}
-          {(visits.data?.items ?? []).map((row) => (
-            <option key={String(row.id)} value={String(row.id)}>{String(row.id)}</option>
-          ))}
+          {(visits.data?.items ?? []).map((row) => {
+            // 可读 label（开始时间 + 短 ID），替代裸 UUID——否则多就诊时无法区分。
+            const start = row.startTime ? formatDateTime(String(row.startTime)) : '';
+            const label = start ? `${start}（${String(row.id).slice(0, 8)}）` : String(row.id);
+            return <option key={String(row.id)} value={String(row.id)}>{label}</option>;
+          })}
         </select>
       </label>
       {form.patientId && (

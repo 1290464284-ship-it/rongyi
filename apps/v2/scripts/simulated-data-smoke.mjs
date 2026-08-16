@@ -1,15 +1,17 @@
 import { spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { resolveSimulatedDataDir } from './simulated-data.mjs';
+import { SIM_ADMIN_PASSWORD } from './lib/sim-admin.mjs';
+import { pickFreePort } from './lib/smoke-runtime.mjs';
 
 const appRoot = path.resolve(import.meta.dirname, '..');
 const serverScript = path.join(appRoot, 'dist-electron', 'server.cjs');
 const legacyDb = path.join(appRoot, 'legacy', 'dental.sqlite');
 const legacySchemaDir = path.join(appRoot, 'legacy', 'schema');
-const port = 38000 + Math.floor(Math.random() * 1000);
+const port = await pickFreePort(38000, 38999);
 // 模拟库管理员密码固定为 v2-sim-admin-password（simulate-clinic-data.ts
 // 硬编码）；本 smoke 对模拟库登录，必须用固定口令（同 disaster-drill）。
-const adminPassword = 'v2-sim-admin-password';
+const adminPassword = SIM_ADMIN_PASSWORD;
 const backupKey = 'simulated-data-backup-key-0123456789abcdef';
 const jwtSecret = 'simulated-data-jwt-0123456789abcdef0123456789abcdef';
 

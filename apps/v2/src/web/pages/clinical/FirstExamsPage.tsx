@@ -31,6 +31,7 @@ export function FirstExamsPage() {
         emptyMessage="暂无首诊"
         queryKey={['first-exams']}
         endpoint="/resources/firstExams"
+        paged
         initialForm={emptyForm}
         validate={(form) => (!form.patientId || !form.doctorId ? '请选择患者和医生' : null)}
         toPayload={(form) => ({

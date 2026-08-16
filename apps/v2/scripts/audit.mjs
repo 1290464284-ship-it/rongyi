@@ -9,6 +9,8 @@ try {
   });
   console.log(output);
 } catch (error) {
-  console.error(error.stdout ?? error.message);
+  // pnpm audit 失败时 stderr 通常包含具体的漏洞摘要，不能只留 stdout。
+  console.error(error.stdout ?? '');
+  console.error(error.stderr ?? error.message);
   process.exit(1);
 }

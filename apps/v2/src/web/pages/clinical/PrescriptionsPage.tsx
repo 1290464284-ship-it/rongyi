@@ -56,6 +56,7 @@ export function PrescriptionsPage() {
         emptyMessage="暂无处方"
         queryKey={['prescriptions']}
         endpoint="/resources/prescriptions"
+        paged
         initialForm={() => {
           editingIdRef.current = null;
           prescriptionItemsLoadedRef.current = false;

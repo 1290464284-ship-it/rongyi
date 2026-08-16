@@ -11,13 +11,13 @@ export default defineConfig({
       reportsDirectory: 'coverage-web',
       include: ['src/web/**/*.tsx', 'src/web/**/*.ts'],
       // 实测基线（2026-08-07，v8 provider）：lines 85.5 / functions 79.5 /
-      // statements 82.16 / branches 71.78。原门槛（lines 100 等）从未可达成，
-      // 现按实测值留 ~2% 余量；TODO: 后续补 UI 测试后逐步恢复 branches 到 92.5。
+      // statements 82.16 / branches 71.78。UI 翻新 + 页面测试补齐后实测
+      // lines 99.87 / branches 99.91，门槛收紧到实测 −2~5%，杜绝“掉 15 点仍绿”。
       thresholds: {
-        statements: 86,
-        branches: 75,
-        functions: 84,
-        lines: 90,
+        statements: 95,
+        branches: 95,
+        functions: 95,
+        lines: 95,
       },
     },
   },

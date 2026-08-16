@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pickFreePort } from './lib/smoke-runtime.mjs';
 
 const appRoot = path.resolve(import.meta.dirname, '..');
 const serverScript = path.join(appRoot, 'dist-electron', 'server.cjs');
@@ -11,7 +12,7 @@ const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-http-fuzz-'));
 const dataDir = path.join(tempRoot, 'data');
 const backupDir = path.join(dataDir, 'backups');
 const logDir = path.join(dataDir, 'logs');
-const port = 34000 + Math.floor(Math.random() * 2000);
+const port = await pickFreePort(34000, 35999);
 const jwtSecret = 'http-fuzz-secret-0123456789abcdef0123456789abcdef';
 const backupKey = 'http-fuzz-backup-key-0123456789abcdef';
 const adminPassword = 'FuzzSmokeAdmin123!';
@@ -68,7 +69,7 @@ async function startApi() {
       V2_BACKUP_KEY: backupKey,
       V2_ADMIN_PASSWORD: adminPassword,
     },
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: ['ignore', 'inherit', 'inherit'],
     windowsHide: true,
   });
   await waitForApi();

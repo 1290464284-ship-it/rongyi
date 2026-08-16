@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../lib/api';
 import { Dialog, LoadingState } from '../components';
@@ -23,6 +23,7 @@ export function ReportDialog({
   const [outlineColor, setOutlineColor] = useState<string | null>(null);
   const [lineColor, setLineColor] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
 
   const reportQuery = useQuery({
     queryKey: ['cephalometric-report', row.id],
@@ -47,6 +48,7 @@ export function ReportDialog({
   }, [effectiveJsonText, effectiveOutlineColor, effectiveLineColor]);
 
   async function handleSave() {
+    if (savingRef.current) return;
     // 未编辑时必须以服务端已加载数据为保存底稿，否则只改颜色保存会把
     // 轮廓点/折线/结论整体清空（jsonText 为 null 时不能再回退到 '{}'）。
     const text = jsonText ?? (reportQuery.data ? JSON.stringify(loadedReport, null, 2) : null);
@@ -66,6 +68,7 @@ export function ReportDialog({
       return;
     }
     const reportJson = { ...(parsed as Record<string, unknown>), outlineColor: effectiveOutlineColor, lineColor: effectiveLineColor };
+    savingRef.current = true;
     setSaving(true);
     try {
       await apiRequest(`/cephalometric/${row.id}/report`, {
@@ -79,6 +82,7 @@ export function ReportDialog({
     } catch (error) {
       showToast(errorMessage(error, '保存报告失败'), 'error');
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   }

@@ -37,13 +37,13 @@ export class SqliteMemberCardRepository implements MemberCardRepository {
 
   findByPatient(patientId: string, clinicId?: string | null): MemberCardRecord | null {
     const params = clinicId ? [patientId, 'ACTIVE', clinicId] : [patientId, 'ACTIVE'];
-    // 多卡时按建档顺序取最早一张，避免依赖插入顺序的隐式选择。
-    return (this.db.prepare(`SELECT * FROM MemberCard WHERE patientId = ? AND status = ? AND deletedAt IS NULL${tenantAnd(clinicId)} ORDER BY createdAt ASC, id ASC LIMIT 1`).get(...params) as MemberCardRecord | undefined) ?? null;
+    // 多卡时按建档顺序取最早一张（同时间戳按 rowid 即插入顺序兜底），避免依赖无 ORDER BY 的隐式选择。
+    return (this.db.prepare(`SELECT * FROM MemberCard WHERE patientId = ? AND status = ? AND deletedAt IS NULL${tenantAnd(clinicId)} ORDER BY createdAt ASC, rowid ASC LIMIT 1`).get(...params) as MemberCardRecord | undefined) ?? null;
   }
 
   findByPatientForRefund(patientId: string, clinicId?: string | null): MemberCardRecord | null {
     const params = clinicId ? [patientId, clinicId] : [patientId];
-    return (this.db.prepare(`SELECT * FROM MemberCard WHERE patientId = ? AND deletedAt IS NULL${tenantAnd(clinicId)} ORDER BY createdAt ASC, id ASC LIMIT 1`).get(...params) as MemberCardRecord | undefined) ?? null;
+    return (this.db.prepare(`SELECT * FROM MemberCard WHERE patientId = ? AND deletedAt IS NULL${tenantAnd(clinicId)} ORDER BY createdAt ASC, rowid ASC LIMIT 1`).get(...params) as MemberCardRecord | undefined) ?? null;
   }
 
   updateBalanceRefund(id: string, amount: number, updatedAt: string, clinicId?: string | null): void {

@@ -4,6 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveSimulatedDataDir } from './simulated-data.mjs';
+import { SIM_ADMIN_PASSWORD } from './lib/sim-admin.mjs';
+import { pickFreePort } from './lib/smoke-runtime.mjs';
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const serverScript = path.join(appRoot, 'dist-electron', 'server.cjs');
@@ -16,14 +18,14 @@ const dataDir = path.join(tempRoot, 'data');
 const dbPath = path.join(dataDir, 'v2.sqlite');
 const backupDir = path.join(dataDir, 'backups');
 const logDir = path.join(dataDir, 'logs');
-const port = 40000 + Math.floor(Math.random() * 1000);
+const port = await pickFreePort(40000, 40999);
 const jwtSecret = 'disaster-drill-secret-0123456789abcdef0123456789abcdef';
 const goodKey = 'disaster-good-key-0123456789abcdef';
 const wrongKey = 'disaster-wrong-key-9876543210abcdef';
-// 模拟库管理员密码固定为 v2-sim-admin-password（simulate-clinic-data.ts
-// 硬编码，不读外层 env）。本 drill 复制模拟库启动 API，登录必须用该固定
-// 口令；取外层 V2_ADMIN_PASSWORD（CI smoke job 的 dev-server 引导口令）会 401。
-const adminPassword = 'v2-sim-admin-password';
+// 模拟库管理员密码固定（simulate-clinic-data.ts 硬编码，不读外层 env）。
+// 本 drill 复制模拟库启动 API，登录必须用该固定口令；取外层 V2_ADMIN_PASSWORD
+// （CI smoke job 的 dev-server 引导口令）会 401。
+const adminPassword = SIM_ADMIN_PASSWORD;
 
 const sourceSimDir = resolveSimulatedDataDir();
 if (!sourceSimDir) {
@@ -98,7 +100,7 @@ async function startApi() {
   apiProcess = spawn(process.execPath, [serverScript], {
     cwd: appRoot,
     env: baseEnv(),
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: ['ignore', 'inherit', 'inherit'],
     windowsHide: true,
   });
   await waitForApi();

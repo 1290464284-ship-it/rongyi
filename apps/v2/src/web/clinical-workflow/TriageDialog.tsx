@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../lib/api';
-import { Dialog } from '../components';
+import { Dialog, DoctorSelect } from '../components';
 import { errorMessage } from '../lib/messages';
 import { useToast } from '../lib/toast-context';
 import type { Page } from '../lib/types';
@@ -21,10 +21,6 @@ export function TriageDialog({
   const departments = useQuery({
     queryKey: ['workflow', 'departments'],
     queryFn: () => apiRequest<Page<Record<string, unknown>>>('/resources/departments?page=1&pageSize=100'),
-  });
-  const doctors = useQuery({
-    queryKey: ['workbench', 'doctors'],
-    queryFn: () => apiRequest<Array<Record<string, unknown>>>('/doctors'),
   });
   const [departmentId, setDepartmentId] = useState('');
   const [doctorId, setDoctorId] = useState('');
@@ -71,24 +67,7 @@ export function TriageDialog({
             ))}
           </select>
         </label>
-        {/* B6：/doctors 加载失败时行内提示并支持重试，避免静默空列表 */}
-        {doctors.isError && (
-          <div className="query-section-error">
-            <p className="error">医生列表加载失败</p>
-            <button type="button" className="btn-secondary" onClick={() => void doctors.refetch()}>重试</button>
-          </div>
-        )}
-        <label>
-          分诊医生
-          <select value={doctorId} onChange={(event) => setDoctorId(event.target.value)} disabled={doctors.isError}>
-            <option value="">选择医生</option>
-            {doctors.data?.map((doctor) => (
-              <option key={String(doctor.id)} value={String(doctor.id)}>
-                {String(doctor.name ?? doctor.id)}
-              </option>
-            ))}
-          </select>
-        </label>
+        <DoctorSelect label="分诊医生" value={doctorId} onChange={setDoctorId} />
         <label>
           分诊备注
           <textarea value={triageNote} onChange={(event) => setTriageNote(event.target.value)} />

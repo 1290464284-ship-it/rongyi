@@ -82,17 +82,17 @@ export function ClinicalWorkflowPage() {
     placeholderData: (previous) => previous,
   });
   const queries = { registrations, visits, firstExams, treatments } as Record<typeof resources[number], ResourcePageQuery>;
-  const stale = queries.registrations.isPlaceholderData
-    || queries.visits.isPlaceholderData
-    || queries.firstExams.isPlaceholderData
-    || queries.treatments.isPlaceholderData;
+  // 按资源维度判断 placeholder：翻任一资源分页只禁用该资源区块的操作，
+  // 不再连坐其它无关区块（审计：全局 OR 会让四个区块一起变灰）。
+  const staleOf = (resource: (typeof resources)[number]) => queries[resource].isPlaceholderData;
   const [activeDialog, setActiveDialog] = useState<WorkbenchDialog | null>(null);
   const [transitionKey, setTransitionKey] = useState<string | null>(null);
   // ref 同步防重：state 更新前同一次点击风暴内连续点击也能被拦下，避免并发 PATCH。
   const transitionRef = useRef(false);
 
   async function transition(resource: string, id: string, status: string) {
-    if (stale) return;
+    const typedResource = resource as (typeof resources)[number];
+    if (staleOf(typedResource)) return;
     const key = `${resource}:${id}:${status}`;
     if (transitionRef.current) return;
     transitionRef.current = true;
@@ -130,13 +130,13 @@ export function ClinicalWorkflowPage() {
     return (
       <div className="kanban-actions">
         {(transitions.registrations?.[String(row.status)] ?? []).map((next) => (
-          <button key={next} disabled={transitionKey !== null || stale} onClick={() => transition('registrations', String(row.id), next)}>
+          <button key={next} disabled={transitionKey !== null || staleOf('registrations')} onClick={() => transition('registrations', String(row.id), next)}>
             {STATUS_LABELS[next]}
           </button>
         ))}
         {row.status === 'TRIAGED' && <span className="triage-badge">已分诊</span>}
-        <button disabled={stale} onClick={() => setActiveDialog({ kind: 'record', row })}>病历</button>
-        <button disabled={stale} onClick={() => setActiveDialog({ kind: 'followup', row })}>回访</button>
+        <button disabled={staleOf('registrations')} onClick={() => setActiveDialog({ kind: 'record', row })}>病历</button>
+        <button disabled={staleOf('registrations')} onClick={() => setActiveDialog({ kind: 'followup', row })}>回访</button>
       </div>
     );
   }
@@ -158,7 +158,7 @@ export function ClinicalWorkflowPage() {
           page={resourcePage.registrations}
           hasNext={resourcePage.registrations * WORKFLOW_PAGE_SIZE < (registrations.data?.total ?? 0)}
           onPageChange={(page) => setResourcePage((current) => ({ ...current, registrations: page }))}
-          disabled={stale}
+          disabled={staleOf('registrations')}
         />
       </section>
       {resources.slice(1).map((resource) => {
@@ -176,7 +176,7 @@ export function ClinicalWorkflowPage() {
             render: (row: Record<string, unknown>) => (
               <>
                 {(transitions[resource]?.[String(row.status)] ?? []).map((next) => (
-                  <button key={next} disabled={transitionKey !== null || stale} onClick={() => transition(resource, String(row.id), next)}>
+                  <button key={next} disabled={transitionKey !== null || staleOf(resource)} onClick={() => transition(resource, String(row.id), next)}>
                     {STATUS_LABELS[next]}
                   </button>
                 ))}
@@ -195,15 +195,15 @@ export function ClinicalWorkflowPage() {
               page={resourcePage[resource]}
               hasNext={resourcePage[resource] * WORKFLOW_PAGE_SIZE < (query.data?.total ?? 0)}
               onPageChange={(page) => setResourcePage((current) => ({ ...current, [resource]: page }))}
-              disabled={stale}
+              disabled={staleOf(resource)}
             />
           </section>
         );
       })}
-      {activeDialog?.kind === 'record' && !stale && (
+      {activeDialog?.kind === 'record' && !staleOf('registrations') && (
         <RecordDialog row={activeDialog.row} onClose={() => setActiveDialog(null)} onSaved={refreshAfterAction} />
       )}
-      {activeDialog?.kind === 'followup' && !stale && (
+      {activeDialog?.kind === 'followup' && !staleOf('registrations') && (
         <CreateFollowUpDialog row={activeDialog.row} onClose={() => setActiveDialog(null)} onSaved={refreshAfterAction} />
       )}
     </div>

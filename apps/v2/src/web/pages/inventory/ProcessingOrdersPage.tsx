@@ -182,6 +182,7 @@ export function ProcessingOrdersPage() {
         emptyMessage="暂无加工单"
         queryKey={['processing-orders']}
         endpoint="/resources/processingOrders"
+        paged
         initialForm={() => {
           editingIdRef.current = null;
           editingStatusRef.current = null;

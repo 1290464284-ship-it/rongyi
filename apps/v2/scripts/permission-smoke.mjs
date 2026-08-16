@@ -4,6 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveSimulatedDataDir } from './simulated-data.mjs';
+import { SIM_ADMIN_PASSWORD } from './lib/sim-admin.mjs';
+import { pickFreePort } from './lib/smoke-runtime.mjs';
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const serverScript = path.join(appRoot, 'dist-electron', 'server.cjs');
@@ -13,10 +15,10 @@ const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-permission-smoke-'));
 const dataDir = path.join(tempRoot, 'data');
 const backupDir = path.join(dataDir, 'backups');
 const logDir = path.join(dataDir, 'logs');
-const port = 43000 + Math.floor(Math.random() * 1000);
+const port = await pickFreePort(43000, 43999);
 // 模拟库由 simulate:clinic-data 用固定默认密码生成；不读外层 V2_ADMIN_PASSWORD，
 // 否则并入 smoke:all 时会因外层 smoke 密码与库内管理员不一致而 401。
-const adminPassword = 'v2-sim-admin-password';
+const adminPassword = SIM_ADMIN_PASSWORD;
 
 const sourceSimDir = resolveSimulatedDataDir();
 if (!sourceSimDir) {
@@ -78,7 +80,7 @@ function startApi() {
       V2_BACKUP_KEY: 'permission-smoke-backup-key-0123456789abcdef',
       V2_ADMIN_PASSWORD: adminPassword,
     },
-    stdio: ['ignore', 'ignore', 'pipe'],
+    stdio: ['ignore', 'ignore', 'inherit'],
     windowsHide: true,
   });
 }

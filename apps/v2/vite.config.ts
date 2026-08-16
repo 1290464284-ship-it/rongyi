@@ -50,14 +50,15 @@ export default defineConfig({
       reportsDirectory: 'coverage',
       include: ['src/server/**/*.ts', 'src/domain/**/*.ts', 'src/server/scheduler.ts'],
       exclude: ['src/server/main.ts'],
-      // CI 实测基线（2026-08-07，v8 provider）：lines 97.45 / functions 99 /
-      // statements 96.29 / branches 88.42。门槛设 100% 从未可达成（CI 此前从未运行），
-      // 现按实测值留 ~2% 余量，保持质量门有效且稳定。
+      // 实测基线（2026-08-07，v8 provider）：lines 97.45 / functions 99 /
+      // statements 96.29 / branches 88.42。2026-08 UI 翻新 + 测试补齐后实测
+      // 四项均已达 100%（含登记过的 v8-ignore 排除），门槛收紧到实测 −2~5%，
+      // 掉几个百分点即红，保持质量门对回归的有效拦截。
       thresholds: {
-        statements: 95,
-        branches: 85,
-        functions: 97,
-        lines: 95,
+        statements: 98,
+        branches: 95,
+        functions: 98,
+        lines: 98,
       },
     },
   },

@@ -1,6 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
-import { apiRequest } from '../lib/api';
-import { MissingSelectOption, SearchableSelect, UploadPreview } from '../components';
+import { DoctorSelect, MissingSelectOption, SearchableSelect, UploadPreview } from '../components';
 import { PHASE_OPTIONS } from './constants';
 import type { ImagingCategoryRow, ImagingForm } from './types';
 
@@ -30,12 +28,6 @@ export function ImagingFormFields({
   setFile: (file: File | null) => void;
   categories: ImagingCategoryRow[];
 }) {
-  const doctors = useQuery({
-    queryKey: ['imaging-doctors'],
-    queryFn: () => apiRequest<Array<Record<string, unknown>>>('/doctors'),
-  });
-  const doctorRows = doctors.data ?? [];
-  const doctorMissing = form.doctorId !== '' && !doctorRows.some((row) => String(row.id) === form.doctorId);
   const categoryMissing = form.categoryId !== '' && !categories.some((category) => String(category.id) === form.categoryId);
   return (
     <>
@@ -43,23 +35,7 @@ export function ImagingFormFields({
         患者
         <SearchableSelect resource="patients" value={form.patientId} onChange={(id) => update({ patientId: id })} ariaLabel="患者" placeholder="选择患者" />
       </label>
-      {/* B6：/doctors 加载失败时行内提示并支持重试，避免静默空列表 */}
-      {doctors.isError && (
-        <div className="query-section-error">
-          <p className="error">医生列表加载失败</p>
-          <button type="button" className="btn-secondary" onClick={() => void doctors.refetch()}>重试</button>
-        </div>
-      )}
-      <label>
-        医生
-        <select value={form.doctorId} onChange={(event) => update({ doctorId: event.target.value })} disabled={doctors.isError}>
-          <option value="">选择医生</option>
-          {doctorMissing && <MissingSelectOption value={form.doctorId} />}
-          {doctors.data?.map((row) => (
-            <option key={String(row.id)} value={String(row.id)}>{String(row.name ?? row.id)}</option>
-          ))}
-        </select>
-      </label>
+      <DoctorSelect label="医生" value={form.doctorId} onChange={(id) => update({ doctorId: id })} />
       <label>
         影像类型
         <input value={form.type} onChange={(event) => update({ type: event.target.value })} />

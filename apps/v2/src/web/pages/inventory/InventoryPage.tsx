@@ -70,6 +70,8 @@ export function InventoryPage() {
     queryFn: () => apiRequest<BatchListData>(
       itemId ? `/inventory-batches?itemId=${encodeURIComponent(itemId)}` : '/inventory-batches',
     ),
+    // 未选中项目时不拉取：避免 itemId 为空时退化为全量批次拉取（历史数据可增长）。
+    enabled: Boolean(itemId),
   });
   const expiringBatches = useQuery({
     queryKey: ['inventory-batches-expiring'],
@@ -150,6 +152,22 @@ export function InventoryPage() {
       return;
     }
     try {
+      // 扫码定位优先走服务端精确过滤（code/barcode 等值），不受前 20 条截断影响；
+      // 通用列表对已声明字段支持 `?field=value` 精确过滤。
+      const [byCode, byBarcode] = await Promise.all([
+        apiRequest<Page<Record<string, unknown>>>(
+          `/resources/inventoryItems?page=1&pageSize=1&code=${encodeURIComponent(value)}`),
+        apiRequest<Page<Record<string, unknown>>>(
+          `/resources/inventoryItems?page=1&pageSize=1&barcode=${encodeURIComponent(value)}`),
+      ]);
+      const exact = (byCode.items ?? []).find((row) => String(row.code ?? '') === value)
+        ?? (byBarcode.items ?? []).find((row) => String(row.barcode ?? '') === value);
+      if (exact) {
+        setItemId(String(exact.id));
+        showToast(`已定位：${String(exact.name ?? exact.code ?? '')}`, 'success');
+        return;
+      }
+      // 精确未命中再退化为全文搜索（兼容手输部分编码/名称的场景）。
       const result = await apiRequest<Page<Record<string, unknown>>>(
         `/resources/inventoryItems?page=1&pageSize=20&search=${encodeURIComponent(value)}`,
       );

@@ -26,6 +26,7 @@ export function PurchaseOrdersPage() {
       emptyMessage="暂无采购单"
       queryKey={['purchase-orders']}
       endpoint="/resources/purchaseOrders"
+      paged
       initialForm={() => {
         editingIdRef.current = null;
         editingStatusRef.current = null;

@@ -82,7 +82,8 @@ jobs:
       - name: Full shuffle tests
         run: pnpm --filter @dental/v2 run test:flaky
         env:
-          FLAKY_RUNS: 1
+          # 至少两轮 shuffle，检出间歇性顺序泄漏（单轮漏检率高）。
+          FLAKY_RUNS: 2
 
       - name: Mutation
         run: pnpm --filter @dental/v2 run test:mutation

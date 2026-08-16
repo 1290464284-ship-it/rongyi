@@ -155,7 +155,7 @@ async function startApi(gatewayPort) {
       V2_WECHAT_APP_SECRET: 'mock-wechat-secret',
       NODE_TLS_REJECT_UNAUTHORIZED: '0',
     },
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: ['ignore', 'inherit', 'inherit'],
     windowsHide: true,
   });
   await waitForApi();

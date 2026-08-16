@@ -5,6 +5,8 @@ dist-electron
 coverage
 coverage-web
 release-v2/
+release-v2-internal/
+logs/
 apps/v2/data/
 apps/v2/logs/
 apps/v2/reports/

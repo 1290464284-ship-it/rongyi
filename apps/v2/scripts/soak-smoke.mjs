@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { pickFreePort } from './lib/smoke-runtime.mjs';
 
 const require = createRequire(import.meta.url);
 const Database = require(path.resolve('node_modules/better-sqlite3'));
@@ -15,7 +16,7 @@ const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-soak-smoke-'));
 const dataDir = path.join(tempRoot, 'data');
 const backupDir = path.join(dataDir, 'backups');
 const logDir = path.join(dataDir, 'logs');
-const port = 47000 + Math.floor(Math.random() * 1000);
+const port = await pickFreePort(47000, 47999);
 const adminPassword = 'SoakSmokeAdmin123!';
 const durationSeconds = Math.max(10, Number(process.env.V2_SOAK_SECONDS ?? 60));
 const targetRequestsPerSecond = Math.max(1, Number(process.env.V2_SOAK_RPS ?? 5));
@@ -41,7 +42,7 @@ const apiProcess = spawn(process.execPath, [serverScript], {
     V2_BACKUP_KEY: 'soak-smoke-backup-key-0123456789abcdef',
     V2_ADMIN_PASSWORD: adminPassword,
   },
-  stdio: ['ignore', 'ignore', 'pipe'],
+  stdio: ['ignore', 'ignore', 'inherit'],
   windowsHide: true,
 });
 

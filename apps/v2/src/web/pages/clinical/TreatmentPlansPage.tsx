@@ -11,12 +11,12 @@ import { PrintPreview } from '../../treatment-plans/PrintPreview';
 import { SignForm } from '../../treatment-plans/SignForm';
 import { PlanFollowUpDialog } from '../../treatment-plans/PlanFollowUpDialog';
 import {
-  FOLLOW_UP_LABELS,
   PLAN_DISCOUNT_LABELS,
   type PlanRow,
   type TreatmentPlanForm,
   type TreatmentPlanPrintResult,
 } from '../../treatment-plans/types';
+import { FOLLOW_UP_STATUS_LABELS, CLINICAL_STATUS_LABELS } from '../../lib/labels';
 import { buildValidItems, cleanupOrphanPlan, emptyPlanForm, newItem, updatePlanWithItems } from '../../treatment-plans/plan-utils';
 
 const planColumns: DataTableColumn<PlanRow>[] = [
@@ -24,7 +24,14 @@ const planColumns: DataTableColumn<PlanRow>[] = [
   { key: 'patientId', label: '患者', render: (row) => row.patientIdLabel ?? row.patientId ?? '' },
   { key: 'doctorId', label: '医生', render: (row) => row.doctorIdLabel ?? row.doctorId ?? '' },
   { key: 'totalFee', label: '总费用', render: (row) => formatMoney(row.totalFee) },
-  { key: 'status', label: '状态' },
+  {
+    key: 'status',
+    label: '状态',
+    render: (row) => {
+      const value = String(row.status ?? '');
+      return CLINICAL_STATUS_LABELS[value] ?? value;
+    },
+  },
   { key: 'printCount', label: '打印次数', render: (row) => String(row.printCount ?? 0) },
   { key: 'signedAt', label: '签字', render: (row) => (row.signedAt ? '已签' : '未签') },
   {
@@ -41,7 +48,7 @@ const planColumns: DataTableColumn<PlanRow>[] = [
     label: '回访',
     render: (row) => {
       const rawStatus = String(row.followUpStatus ?? 'NONE');
-      const label = FOLLOW_UP_LABELS[rawStatus] ?? rawStatus;
+      const label = FOLLOW_UP_STATUS_LABELS[rawStatus] ?? rawStatus;
       return row.nextFollowUpAt ? `${label}（${String(row.nextFollowUpAt)}）` : label;
     },
   },
@@ -66,6 +73,7 @@ export function TreatmentPlansPage() {
         emptyMessage="暂无治疗计划"
         queryKey={['treatment-plans']}
         endpoint="/resources/treatmentPlans"
+        paged
         initialForm={() => {
           editingIdRef.current = null;
           itemsLoadedRef.current = false;

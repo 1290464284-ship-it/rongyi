@@ -165,6 +165,7 @@ export function ImagingPage() {
         emptyMessage="暂无影像"
         queryKey={['imaging']}
         endpoint="/resources/imaging"
+        paged
         initialForm={() => {
           editingIdRef.current = null;
           return { ...emptyForm };

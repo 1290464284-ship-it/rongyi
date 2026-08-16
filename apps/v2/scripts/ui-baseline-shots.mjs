@@ -1,6 +1,7 @@
 import { chromium } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
+import { simAdminPassword } from './lib/sim-admin.mjs';
 
 // UI 基线截图 + A1 弹窗遮罩层级目验（阶段 1 → 阶段 6 之间的改前基线，R14 视觉回归护栏）
 // 用法（在 apps/v2 下）：
@@ -19,7 +20,7 @@ process.on('uncaughtException', (error) => {
 });
 
 const base = process.env.V2_WEB_URL ?? 'http://localhost:5180';
-const adminPassword = process.env.V2_ADMIN_PASSWORD ?? 'v2-sim-admin-password';
+const adminPassword = simAdminPassword();
 const scheme = process.env.UI_BASELINE_SCHEME ?? 'light';
 const outDir = path.resolve(process.env.UI_BASELINE_DIR ?? path.join(import.meta.dirname, '..', 'test-results', 'ui-baseline', 'before'));
 

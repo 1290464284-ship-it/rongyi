@@ -83,6 +83,7 @@ export function MemberCardsPage() {
         queryKey={['member-cards']}
         endpoint="/resources/memberCards"
         pageSize={100}
+        paged
         initialForm={() => {
           editingIdRef.current = null;
           return { ...emptyForm };

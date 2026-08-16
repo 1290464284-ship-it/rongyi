@@ -531,7 +531,7 @@ describe('TreatmentPlansPage', () => {
     expect(screen.getAllByText('折扣').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText('回访').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('整单折 10%')).toBeDefined();
-    expect(screen.getByText('待回访（2026-08-20）')).toBeDefined();
+    expect(screen.getByText('待跟进（2026-08-20）')).toBeDefined();
     expect(screen.getAllByText('无折扣').length).toBeGreaterThanOrEqual(1);
   });
 
@@ -883,7 +883,7 @@ describe('TreatmentPlansPage', () => {
     expect(screen.getByText('MYSTERY 0%')).toBeDefined();
     expect(screen.getByText('CUSTOM')).toBeDefined();
     expect(screen.getByText('无回访状态')).toBeDefined();
-    expect(screen.getByText('无')).toBeDefined();
+    expect(screen.getByText('未追踪')).toBeDefined();
   });
 
   it('renders the billing dialog title with an empty name for unnamed plans', async () => {

@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { apiRequest } from '../lib/api';
 import { Dialog } from '../components';
 import { errorMessage } from '../lib/messages';
@@ -24,13 +24,16 @@ export function CreateFollowUpDialog({
   });
   const [content, setContent] = useState('');
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (busyRef.current) return;
     if (!planDate) {
       showToast('请选择随访日期', 'error');
       return;
     }
+    busyRef.current = true;
     setBusy(true);
     try {
       await apiRequest('/resources/followUps', {
@@ -43,6 +46,7 @@ export function CreateFollowUpDialog({
     } catch (error) {
       showToast(errorMessage(error, '创建回访失败'), 'error');
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }

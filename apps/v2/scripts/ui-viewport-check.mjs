@@ -1,6 +1,7 @@
 import { chromium } from '@playwright/test';
 import fs from 'node:fs';
 import path from 'node:path';
+import { simAdminPassword } from './lib/sim-admin.mjs';
 
 // 阶段 5 桌面端检查：多视口（1280×800 / 1920×1080）× DPR（1 / 1.5）水平溢出检查与截图，
 // 外加打印媒体（@media print）下的关键页截图与样式断言；中文字体回退链验证。
@@ -12,7 +13,7 @@ process.on('unhandledRejection', (reason) => {
 });
 
 const base = process.env.V2_WEB_URL ?? 'http://localhost:5180';
-const adminPassword = process.env.V2_ADMIN_PASSWORD ?? 'v2-sim-admin-password';
+const adminPassword = simAdminPassword();
 const outDir = path.resolve(process.env.UI_VIEWPORT_DIR ?? path.join(import.meta.dirname, '..', 'test-results', 'ui-baseline', 'viewports'));
 fs.mkdirSync(outDir, { recursive: true });
 

@@ -27,7 +27,7 @@ pnpm --filter @dental/v2 electron:dist:internal
 4. 校验安装包、`latest.yml` 和 blockmap。
 5. 运行 NSIS 安装/卸载 smoke。
 
-产物位于 `apps/v2/release-v2/`。因为证书不受 Windows 信任，首次运行会显示“未知发布者”，需要选择“更多信息”后“仍要运行”。这只应在你控制的电脑上使用，不适合作为公开软件分发。
+产物位于 `apps/v2/release-v2-internal/`（公共正式版输出为 `apps/v2/release-v2/`，两者分离，避免内部自签产物混入公共发布目录）。因为证书不受 Windows 信任，首次运行会显示“未知发布者”，需要选择“更多信息”后“仍要运行”。这只应在你控制的电脑上使用，不适合作为公开软件分发。
 
 如果希望把内部版放到 GitHub Release 上，方便多台受控电脑下载，可以在 GitHub Actions 页面手动运行 `V2 Internal Release` workflow：
 
@@ -37,7 +37,7 @@ pnpm --filter @dental/v2 electron:dist:internal
 
 该 workflow 不需要 CA 证书或付费签名服务，但发布的是自签名内部版，Windows 仍会显示未知发布者。
 
-当前已验证的内部 Release：
+当前已验证的内部 Release（早期命名，先于 `-internal.<时间戳>` 约定，之后的手动发布按上文新 tag 规则产出）：
 
 [v2-internal-2.2.0](https://github.com/1290464284-ship-it/rongyi/releases/tag/v2-internal-2.2.0)
 

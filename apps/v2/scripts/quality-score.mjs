@@ -21,7 +21,12 @@ function readJsonFile(full, fallback = null) {
 
 function flakyMetrics() {
   const history = readJson('flaky-quarantine/history.json', []);
-  const recent = history.slice(-3);
+  // 近 14 天时间窗（与 flaky-report.mjs 同口径）：偶发抖动不会因连续全绿滑出统计。
+  const windowStart = Date.now() - 14 * 86_400_000;
+  const recent = history.filter((entry) => {
+    const time = typeof entry.timestamp === 'string' ? new Date(entry.timestamp).getTime() : 0;
+    return Number.isFinite(time) && time >= windowStart;
+  });
   const runs = recent.length;
   const failures = recent.filter((entry) => !entry.passed).length;
   return { runs, failures, flakinessRate: runs ? failures / runs : 0 };
@@ -46,7 +51,7 @@ function mutationMetrics() {
     return `${relative}:${line}:${mutator}:${replacement}`;
   };
   const staleEntries = [];
-  const summary = { killed: 0, survived: 0, noCoverage: 0, equivalent: 0 };
+  const summary = { killed: 0, survived: 0, noCoverage: 0, equivalent: 0, ignored: 0 };
   for (const [filePath, file] of Object.entries(report.files ?? {})) {
     for (const mutant of file.mutants ?? []) {
       if (mutant.status === 'Killed' || mutant.status === 'Timeout') {
@@ -61,6 +66,10 @@ function mutationMetrics() {
         }
       } else if (mutant.status === 'NoCoverage') {
         summary.noCoverage += 1;
+      } else if (mutant.status === 'Ignored') {
+        // Stryker 静态 Ignored（未执行）；不计入得分分母，但显式暴露给
+        // quality-score.json 读者，避免“100 分”掩盖变异面过窄的事实。
+        summary.ignored += 1;
       }
     }
   }

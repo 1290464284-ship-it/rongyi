@@ -156,13 +156,15 @@ export function InventoryWorkflowPage() {
     { key: 'status', label: '状态', render: () => '待应用' },
   ];
 
-  async function stocktakeAction(path: string, method: 'PATCH' | 'POST', body?: Record<string, unknown>) {
+  async function stocktakeAction(path: string, method: 'PATCH' | 'POST', body?: Record<string, unknown>): Promise<boolean> {
     try {
       await apiRequest(path, { method, body: JSON.stringify(body ?? {}) });
       showToast('操作成功', 'success');
       await stocktakes.refetch();
+      return true;
     } catch (error) {
       showToast(errorMessage(error, '操作失败'), 'error');
+      return false;
     }
   }
 
@@ -173,9 +175,11 @@ export function InventoryWorkflowPage() {
       return;
     }
     const note = stocktakeNote.trim() || undefined;
-    await stocktakeAction('/stocktakes', 'POST', { number, note });
-    setStocktakeNumber('');
-    setStocktakeNote('');
+    // 仅创建成功后清空输入：失败时保留用户填写的单号/备注，避免重复劳动。
+    if (await stocktakeAction('/stocktakes', 'POST', { number, note })) {
+      setStocktakeNumber('');
+      setStocktakeNote('');
+    }
   }
 
   function toggleStocktakeItems(stocktakeId: string) {
@@ -223,7 +227,7 @@ export function InventoryWorkflowPage() {
               <button onClick={() => toggleStocktakeItems(id)}>{expandedStocktakeId === id ? '收起' : '录入'}</button>
               <StocktakeRowActions
                 id={id}
-                onDone={stocktakeAction}
+                onDone={(path, method, body) => stocktakeAction(path, method, body).then(() => undefined)}
               />
             </span>
           );
@@ -233,7 +237,7 @@ export function InventoryWorkflowPage() {
             <span className="inline-form">
               <StocktakeRowActions
                 id={id}
-                onDone={stocktakeAction}
+                onDone={(path, method, body) => stocktakeAction(path, method, body).then(() => undefined)}
                 locked
               />
             </span>

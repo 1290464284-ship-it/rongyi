@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { apiRequest, fetchAllPages } from '../lib/api';
-import { SearchableSelect } from '../components';
+import { fetchAllPages } from '../lib/api';
+import { DoctorSelect, SearchableSelect } from '../components';
 import { centsToYuanString } from '../lib/format';
 import { newItem } from './items';
 import type { ProcessingOrderForm, ProcessingOrderItemRow } from './types';
@@ -19,10 +18,6 @@ export function ProcessingOrderFormFields({
   editingId: string | null;
   onItemsLoaded?: () => void;
 }) {
-  const doctors = useQuery({
-    queryKey: ['processing-doctors'],
-    queryFn: () => apiRequest<Array<Record<string, unknown>>>('/doctors'),
-  });
   const loadedItemsForRef = useRef<string | null>(null);
   const updateRef = useRef(update);
   const onItemsLoadedRef = useRef(onItemsLoaded);
@@ -70,22 +65,7 @@ export function ProcessingOrderFormFields({
         患者
         <SearchableSelect resource="patients" value={form.patientId} onChange={(id) => update({ patientId: id })} ariaLabel="患者" placeholder="选择患者" />
       </label>
-      {/* B6：/doctors 加载失败时行内提示并支持重试，避免静默空列表 */}
-      {doctors.isError && (
-        <div className="query-section-error">
-          <p className="error">医生列表加载失败</p>
-          <button type="button" className="btn-secondary" onClick={() => void doctors.refetch()}>重试</button>
-        </div>
-      )}
-      <label>
-        医生
-        <select value={form.doctorId} onChange={(event) => update({ doctorId: event.target.value })} disabled={doctors.isError}>
-          <option value="">不指定</option>
-          {doctors.data?.map((row) => (
-            <option key={String(row.id)} value={String(row.id)}>{String(row.name ?? row.id)}</option>
-          ))}
-        </select>
-      </label>
+      <DoctorSelect label="医生" value={form.doctorId} onChange={(id) => update({ doctorId: id })} placeholder="不指定" />
       <label>
         加工单号
         <input value={form.number} onChange={(event) => update({ number: event.target.value })} />

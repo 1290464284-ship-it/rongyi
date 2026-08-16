@@ -1,8 +1,7 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
 import { CrudPage } from '../../components/CrudPage';
-import { SearchableSelect, type DataTableColumn } from '../../components';
+import { DoctorSelect, SearchableSelect, type DataTableColumn } from '../../components';
 import { formatMoney, centsToYuanString, splitList, toCents } from '../../lib/format';
 import { errorMessage } from '../../lib/messages';
 import { createInFlightGuard } from '../../lib/in-flight';
@@ -67,6 +66,7 @@ export function TreatmentsPage() {
       emptyMessage="暂无治疗"
       queryKey={['treatments']}
       endpoint="/resources/treatments"
+      paged
       initialForm={emptyForm}
       validate={(form) => {
         const price = Number(form.price || 0);
@@ -173,32 +173,13 @@ function TreatmentStatusSelect({ rowId, onTransition, disabled }: {
 }
 
 function TreatmentFormFields({ form, update }: { form: TreatmentForm; update: (patch: Partial<TreatmentForm>) => void }) {
-  const doctors = useQuery({
-    queryKey: ['treatment-doctors'],
-    queryFn: () => apiRequest<Array<Record<string, unknown>>>('/doctors'),
-  });
   return (
     <>
       <label>
         患者
         <SearchableSelect resource="patients" value={form.patientId} onChange={(id) => update({ patientId: id })} ariaLabel="患者" placeholder="选择患者" />
       </label>
-      {/* B6：/doctors 加载失败时行内提示并支持重试，避免静默空列表 */}
-      {doctors.isError && (
-        <div className="query-section-error">
-          <p className="error">医生列表加载失败</p>
-          <button type="button" className="btn-secondary" onClick={() => void doctors.refetch()}>重试</button>
-        </div>
-      )}
-      <label>
-        医生
-        <select value={form.doctorId} onChange={(event) => update({ doctorId: event.target.value })} disabled={doctors.isError}>
-          <option value="">选择医生</option>
-          {doctors.data?.map((row) => (
-            <option key={String(row.id)} value={String(row.id)}>{String(row.name ?? row.id)}</option>
-          ))}
-        </select>
-      </label>
+      <DoctorSelect label="医生" value={form.doctorId} onChange={(id) => update({ doctorId: id })} />
       <label>
         项目编码
         <input value={form.code} onChange={(event) => update({ code: event.target.value })} />

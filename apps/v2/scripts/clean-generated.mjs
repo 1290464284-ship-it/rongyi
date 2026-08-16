@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const appRoot = path.resolve(import.meta.dirname, '..');
-const removable = new Set(['release-v2', 'coverage', 'logs']);
+const removable = new Set(['release-v2', 'release-v2-internal', 'coverage', 'coverage-web', 'logs']);
 for (const entry of fs.readdirSync(appRoot)) {
   if (entry === 'dist' || entry.startsWith('dist-')) removable.add(entry);
 }

@@ -4,6 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { simAdminPassword } from './lib/sim-admin.mjs';
+import { pickFreePort } from './lib/smoke-runtime.mjs';
 
 const require = createRequire(import.meta.url);
 const Database = require('better-sqlite3');
@@ -16,8 +18,8 @@ const dirtyLegacy = path.join(tempRoot, 'dirty-legacy.sqlite');
 const dataDir = path.join(tempRoot, 'data');
 const backupDir = path.join(dataDir, 'backups');
 const logDir = path.join(dataDir, 'logs');
-const port = 41000 + Math.floor(Math.random() * 1000);
-const adminPassword = process.env.V2_ADMIN_PASSWORD ?? 'v2-sim-admin-password';
+const port = await pickFreePort(41000, 41999);
+const adminPassword = simAdminPassword();
 
 fs.copyFileSync(sanitizedLegacy, dirtyLegacy);
 const now = new Date().toISOString();

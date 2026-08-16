@@ -2,7 +2,7 @@ import { FormEvent, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
 import type { Page } from '../../lib/types';
-import { ConfirmDialog, DataTable, Dialog, LoadingState, MissingSelectOption, PageError, SearchInput, SearchableSelect } from '../../components';
+import { ConfirmDialog, DataTable, Dialog, DoctorSelect, LoadingState, MissingSelectOption, PageError, SearchInput, SearchableSelect } from '../../components';
 import { errorMessage } from '../../lib/messages';
 import { toLocalInput } from '../../lib/format';
 import { useToast } from '../../lib/toast-context';
@@ -11,7 +11,7 @@ import { APPOINTMENT_TYPE_LABELS } from '../../lib/labels';
 import { parseLocalDateTime } from '../../appointments/date';
 import { appointmentColumns } from '../../appointments/columns';
 import { createInFlightGuard } from '../../lib/in-flight';
-import type { AppointmentRow, AppointmentForm, PurposeRow, LookupRow } from '../../appointments/types';
+import type { AppointmentRow, AppointmentForm, PurposeRow } from '../../appointments/types';
 import { AppointmentPurposePanel } from './AppointmentPurposePanel';
 
 const transitionGuard = createInFlightGuard();
@@ -49,17 +49,11 @@ export function AppointmentsPage({ initialSearch }: { initialSearch?: string } =
   });
   const [deleteTarget, setDeleteTarget] = useState<AppointmentRow | null>(null);
 
-  const doctors = useQuery({
-    queryKey: ['appointment-doctors'],
-    queryFn: () => apiRequest<Array<LookupRow>>('/doctors'),
-  });
   const purposes = useQuery({
     queryKey: ['appointment-purposes'],
     queryFn: () => apiRequest<Page<PurposeRow>>('/resources/appointmentPurposes?page=1&pageSize=100'),
   });
-  const doctorIds = new Set((doctors.data ?? []).map((row) => String(row.id)));
   const purposeIds = new Set((purposes.data?.items ?? []).map((row) => String(row.id)));
-  const doctorMissing = (id: string) => id !== '' && !doctorIds.has(id);
   const purposeMissing = (id: string) => id !== '' && !purposeIds.has(id);
   const query = useQuery({
     queryKey: ['appointments', page, debouncedSearch],
@@ -255,22 +249,9 @@ export function AppointmentsPage({ initialSearch }: { initialSearch?: string } =
           ariaLabel="搜索预约"
         />
       </div>
-      {/* B6：/doctors 加载失败时行内提示并支持重试，避免静默空列表 */}
-      {doctors.isError && (
-        <div className="query-section-error">
-          <p className="error">医生列表加载失败</p>
-          <button type="button" className="btn-secondary" onClick={() => void doctors.refetch()}>重试</button>
-        </div>
-      )}
       <form className="inline-form" onSubmit={create}>
         <SearchableSelect resource="patients" value={patientId} onChange={setPatientId} ariaLabel="患者" placeholder="选择患者" />
-        <select aria-label="医生" value={doctorId} onChange={(event) => setDoctorId(event.target.value)} disabled={doctors.isError}>
-          <option value="">选择医生</option>
-          {doctors.data?.map((row) => (
-            <option key={row.id} value={row.id}>{String(row.name ?? row.id)}</option>
-          ))}
-          {doctorMissing(doctorId) && <MissingSelectOption value={doctorId} />}
-        </select>
+        <DoctorSelect ariaLabel="医生" value={doctorId} onChange={setDoctorId} />
         <SearchableSelect resource="chairs" value={chairId} onChange={setChairId} ariaLabel="椅位" placeholder="不指定椅位" />
         <select aria-label="预约类型" value={type} onChange={(event) => setType(event.target.value)}>
           {Object.entries(APPOINTMENT_TYPE_LABELS).map(([value, label]) => (
@@ -300,20 +281,8 @@ export function AppointmentsPage({ initialSearch }: { initialSearch?: string } =
 
       <Dialog open={editingAppointment !== null} title="编辑预约" onClose={closeEditAppointment}>
         <form onSubmit={saveEditAppointment}>
-          {doctors.isError && (
-            <div className="query-section-error">
-              <p className="error">医生列表加载失败</p>
-              <button type="button" className="btn-secondary" onClick={() => void doctors.refetch()}>重试</button>
-            </div>
-          )}
           <SearchableSelect resource="patients" value={editForm.patientId} onChange={(value) => setEditForm((current) => ({ ...current, patientId: value }))} ariaLabel="患者" placeholder="选择患者（预约患者）" />
-          <select aria-label="医生" value={editForm.doctorId} onChange={(event) => setEditForm((current) => ({ ...current, doctorId: event.target.value }))} disabled={doctors.isError}>
-            <option value="">选择医生</option>
-            {doctors.data?.map((row) => (
-              <option key={row.id} value={row.id}>{String(row.name ?? row.id)}</option>
-            ))}
-            {doctorMissing(editForm.doctorId) && <MissingSelectOption value={editForm.doctorId} />}
-          </select>
+          <DoctorSelect ariaLabel="医生" value={editForm.doctorId} onChange={(id) => setEditForm((current) => ({ ...current, doctorId: id }))} />
           <SearchableSelect resource="chairs" value={editForm.chairId} onChange={(value) => setEditForm((current) => ({ ...current, chairId: value }))} ariaLabel="椅位" placeholder="不指定椅位" />
           <select aria-label="预约类型" value={editForm.type} onChange={(event) => setEditForm((current) => ({ ...current, type: event.target.value }))}>
             {Object.entries(APPOINTMENT_TYPE_LABELS).map(([value, label]) => (

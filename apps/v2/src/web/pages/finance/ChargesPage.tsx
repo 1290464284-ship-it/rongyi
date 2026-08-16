@@ -1,7 +1,7 @@
 import { FormEvent, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
-import { Dialog, ConfirmDialog, LoadingState, PageError, SearchInput } from '../../components';
+import { Dialog, ConfirmDialog, LoadingState, PageError, PagePager, SearchInput } from '../../components';
 import { formatMoney, centsToYuanString, toCents } from '../../lib/format';
 import { errorMessage } from '../../lib/messages';
 import { useCrudResource } from '../../hooks/use-crud-resource';
@@ -133,11 +133,23 @@ export function ChargesPage({ initialSearch }: { initialSearch?: string } = {}) 
         onLoadCombos={loadCombos}
         onQuoteDiscount={quoteMemberDiscount}
       />
+      {payMethodQuery.error && (
+        <span className="field-error" role="alert">
+          自定义缴费方式加载失败，已回退内置方式
+          <button type="button" onClick={() => void payMethodQuery.refetch()}>重试</button>
+        </span>
+      )}
       <ChargeList
         rows={crud.rows}
         onPayment={setPaymentTarget}
         onRefund={setRefundTarget}
         onDelete={setDeleteTarget}
+        disabled={stale}
+      />
+      <PagePager
+        page={crud.page}
+        hasNext={crud.hasNext}
+        onPageChange={crud.setPage}
         disabled={stale}
       />
 
@@ -295,7 +307,6 @@ export function ChargesPage({ initialSearch }: { initialSearch?: string } = {}) 
       setDeleteTarget(null);
       const refreshed = await crud.query.refetch();
       // 删除末页最后一条时回退一页，避免停留在空页
-      /* v8 ignore next -- 收费列表暂无分页 UI，crud.page 恒为 1，回退分支不可达 */
       if (crud.page > 1 && (refreshed.data?.items?.length ?? 0) === 0) {
         crud.setPage(crud.page - 1);
       }

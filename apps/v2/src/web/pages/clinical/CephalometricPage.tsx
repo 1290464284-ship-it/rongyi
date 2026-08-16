@@ -83,6 +83,7 @@ export function CephalometricPage() {
         emptyMessage="暂无头影测量"
         queryKey={['cephalometric']}
         endpoint="/resources/cephalometricCases"
+        paged
         initialForm={() => {
           editingIdRef.current = null;
           return { ...emptyForm };

@@ -4,6 +4,7 @@ import { apiRequest } from '../../lib/api';
 import type { Page } from '../../lib/types';
 import { DataTable, PagePager, PromptDialog, QuerySection, type DataTableColumn } from '../../components';
 import { formatMoney, toCents } from '../../lib/format';
+import { CHARGE_STATUS_LABELS } from '../../lib/labels';
 import { errorMessage } from '../../lib/messages';
 import { useToast } from '../../lib/toast-context';
 
@@ -94,7 +95,10 @@ export function FinanceWorkflowPage() {
   const debtColumns: DataTableColumn<Record<string, unknown>>[] = [
     { key: 'totalAmount', label: '应收', render: (row) => formatMoney(row.totalAmount) },
     { key: 'paidAmount', label: '已收', render: (row) => formatMoney(row.paidAmount) },
-    { key: 'status', label: '状态', render: (row) => String(row.status ?? '') },
+    { key: 'status', label: '状态', render: (row) => {
+      const value = String(row.status ?? '');
+      return CHARGE_STATUS_LABELS[value] ?? value;
+    } },
     {
       key: 'actions',
       label: '操作',

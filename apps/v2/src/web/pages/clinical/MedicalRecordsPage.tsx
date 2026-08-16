@@ -106,6 +106,7 @@ export function MedicalRecordsPage() {
       emptyMessage="暂无病历"
       queryKey={['medical-records']}
       endpoint="/resources/medicalRecords"
+      paged
       initialForm={emptyForm}
       validate={(form) => (!form.patientId || !form.doctorId ? '请选择患者和医生' : null)}
       toPayload={(form) => ({

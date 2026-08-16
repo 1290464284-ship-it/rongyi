@@ -3,7 +3,8 @@ import type { ReactNode } from 'react';
 import { apiRequest } from '../lib/api';
 import { errorMessage } from '../lib/messages';
 import { useToast } from '../lib/toast-context';
-import { FOLLOW_UP_LABELS, type PlanRow } from './types';
+import { FOLLOW_UP_STATUS_LABELS } from '../lib/labels';
+import type { PlanRow } from './types';
 
 export function PlanFollowUpDialog({
   plan,
@@ -47,7 +48,7 @@ export function PlanFollowUpDialog({
       <label>
         回访状态
         <select aria-label="回访状态" value={status} onChange={(event) => setStatus(event.target.value)}>
-          {Object.entries(FOLLOW_UP_LABELS).map(([value, label]) => (
+          {Object.entries(FOLLOW_UP_STATUS_LABELS).map(([value, label]) => (
             <option key={value} value={value}>{label}</option>
           ))}
         </select>

@@ -5,6 +5,7 @@ import { ConfirmDialog, DataTable, LoadingState, PageError, type DataTableColumn
 import { centsToYuanString, formatMoney, toCents } from '../../lib/format';
 import { errorMessage } from '../../lib/messages';
 import { useToast } from '../../lib/toast-context';
+import { useDoctors } from '../../hooks/use-doctors';
 
 interface RuleRow extends Record<string, unknown> {
   id: string;
@@ -64,10 +65,7 @@ export function CommissionPage() {
     queryKey: ['commission-rules'],
     queryFn: () => apiRequest<RuleRow[]>('/commission/rules'),
   });
-  const doctors = useQuery({
-    queryKey: ['commission-doctors'],
-    queryFn: () => apiRequest<Array<Record<string, unknown>>>('/doctors'),
-  });
+  const doctors = useDoctors();
   const statements = useQuery({
     queryKey: ['commission-statements', period],
     queryFn: () => apiRequest<StatementRow[]>(`/commission/statements?period=${encodeURIComponent(period)}`),

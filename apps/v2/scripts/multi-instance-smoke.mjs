@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pickFreePort } from './lib/smoke-runtime.mjs';
 
 const appRoot = path.resolve(import.meta.dirname, '..');
 const serverScript = path.join(appRoot, 'dist-electron', 'server.cjs');
@@ -278,8 +279,10 @@ async function verifyConcurrentSyncPushAndIdempotent(portA, portB, tokenA, token
 }
 
 async function main() {
-  const portA = 35000 + Math.floor(Math.random() * 1000);
-  const portB = portA + 1;
+  // 两个实例必须使用不同端口；分别探测空闲端口（相邻端口易撞）。
+  const portA = await pickFreePort(35000, 35999);
+  let portB = await pickFreePort(35000, 35999);
+  while (portB === portA) portB = await pickFreePort(35000, 35999);
   try {
     await Promise.all([startServer(portA), startServer(portB)]);
     const tokenA = await login(portA);

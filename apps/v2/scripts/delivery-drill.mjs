@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { pickFreePort } from './lib/smoke-runtime.mjs';
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const serverScript = path.join(appRoot, 'dist-electron', 'server.cjs');
@@ -15,7 +16,8 @@ const dataDir = path.join(tempRoot, 'data');
 const dbPath = path.join(dataDir, 'v2.sqlite');
 const backupDir = path.join(dataDir, 'backups');
 const logDir = path.join(dataDir, 'logs');
-const port = 33000 + Math.floor(Math.random() * 2000);
+// 探测空闲端口启动，避免并行 smoke 互踩造成 EADDRINUSE 假红。
+const port = await pickFreePort(33000, 34999);
 const jwtSecret = 'delivery-drill-secret-0123456789abcdef0123456789abcdef';
 const backupKey = 'delivery-drill-backup-key-0123456789abcdef';
 const adminPassword = process.env.V2_ADMIN_PASSWORD;
@@ -95,11 +97,7 @@ async function startApi() {
   apiProcess.stderr.on('data', (chunk) => {
     stderr += String(chunk);
   });
-  apiProcess.on('exit', (code) => {
-    if (code !== 0 && !process.env.V2_DELIVERY_DRILL_DEBUG) {
-      stderr = '';
-    }
-  });
+  // 崩溃诊断必须保留到 catch 读取；V2_DELIVERY_DRILL_DEBUG 只控制是否打印，不控制是否保留。
   await waitForApi();
   return () => stderr;
 }

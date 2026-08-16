@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { apiRequest } from '../lib/api';
 import { Dialog } from '../components';
 import { errorMessage } from '../lib/messages';
@@ -10,9 +10,13 @@ export function SendWechatDialog({ row, onClose }: { row: CephalometricRow; onCl
   const [phone, setPhone] = useState('');
   const [note, setNote] = useState('');
   const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
 
   async function handleSend(event: FormEvent) {
     event.preventDefault();
+    // ref 级 in-flight 守卫：连点发送在 re-render 前也不会重复 POST（非幂等发消息）
+    if (sendingRef.current) return;
+    sendingRef.current = true;
     setSending(true);
     try {
       await apiRequest(`/cephalometric/${row.id}/send`, {
@@ -27,6 +31,7 @@ export function SendWechatDialog({ row, onClose }: { row: CephalometricRow; onCl
     } catch (error) {
       showToast(errorMessage(error, '微信发送失败'), 'error');
     } finally {
+      sendingRef.current = false;
       setSending(false);
     }
   }
