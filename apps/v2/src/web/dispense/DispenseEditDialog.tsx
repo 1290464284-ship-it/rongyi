@@ -139,7 +139,6 @@ export function DispenseEditDialog({
                 onLoaded={(rows) => {
                   setItemsMeta((current) => {
                     const next = { ...current };
-                    /* v8 ignore next -- spec「treats items without a batchManaged flag」已覆盖无 batchManaged 条目的 ?? 0 分支（断言通过即执行），setState-updater 内 ?? v8 未入账，属采集缺陷 */
                     for (const row of rows) next[String(row.id)] = Number(row.batchManaged ?? 0) === 1;
                     return next;
                   });

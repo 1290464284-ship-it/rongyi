@@ -902,5 +902,8 @@ describe('core repositories', () => {
     clinical.updateStatus('Visit', 'visit-scope', 'COMPLETED', now, { endTime: now }, 'clinic-v2-001');
     clinical.lockMedicalRecord('record-scope', true, 'user', now, 'clinic-v2-001');
     clinical.lockMedicalRecord('record-scope', false, null as unknown as string, now);
+    // T-1：表名白名单断言分支（防御冗余，直接触发使其计入真实覆盖）。
+    expect(() => clinical.getRow('EvilTable', 'x')).toThrow(/not allowed/);
+    expect(() => clinical.updateStatus('EvilTable', 'x', 'DONE', now)).toThrow(/not allowed/);
   });
 });

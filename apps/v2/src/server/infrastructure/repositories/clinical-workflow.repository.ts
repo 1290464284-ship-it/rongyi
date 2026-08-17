@@ -52,9 +52,7 @@ export class SqliteClinicalWorkflowRepository implements ClinicalWorkflowReposit
   }
 
   lockMedicalRecord(id: string, locked: boolean, userId: string, now: string, clinicId?: string | null): void {
-    /* v8 ignore start -- V8 does not report the false ternary branches inside this params literal despite direct coverage. */
     const params = clinicId ? [locked ? 1 : 0, locked ? now : null, locked ? userId : null, now, id, clinicId] : [locked ? 1 : 0, locked ? now : null, locked ? userId : null, now, id];
-    /* v8 ignore stop */
     this.db.prepare(
       `UPDATE MedicalRecord SET isLocked = ?, lockedAt = ?, lockedBy = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL${tenantAnd(clinicId)}`,
     ).run(...params);

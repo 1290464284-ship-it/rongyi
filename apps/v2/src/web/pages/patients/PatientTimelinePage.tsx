@@ -69,9 +69,9 @@ export function PatientTimelinePage() {
   useEffect(() => {
     if (derivedFromList.current || patientRows.length === 0) return;
     derivedFromList.current = true;
-    const first = patientRows[0];
-    /* v8 ignore next -- spec「uses the first real patient id」已覆盖派生患者 id 的 ?? 分支（断言通过即执行），setState-updater 内 ?? v8 未入账，属采集缺陷 */
-    setPatientId((current) => current ?? (first ? String(first.id) : null));
+    // length > 0 保证 first 恒存在（2026-08-17 T-1 复核：原 `first ? ... : null`
+    // 三元与 `if (first)` 的空值分支均为死代码，用非空断言消除）
+    setPatientId((current) => current ?? String(patientRows[0]!.id));
   }, [patientRows]);
   const visits = useTimelineResource('visits', patientId, generationRef);
   const treatments = useTimelineResource('treatments', patientId, generationRef);
@@ -114,12 +114,10 @@ export function PatientTimelinePage() {
   async function loadMoreTimeline() {
     /* v8 ignore next -- 加载更多按钮在 loadingMore 时 disabled，双击不可达 */
     if (loadingMore) return;
-    const results = await Promise.allSettled(timelineQueries.map((query) => query.fetchNextPage()));
-    const failed = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
-    /* v8 ignore next -- spec「reports load-more failures」已覆盖失败提示分支（断言通过即执行），v8 未入账，属采集缺陷 */
-    if (failed) {
-      showToast(errorMessage(failed.reason, '加载更多失败'), 'error');
-    }
+    // React Query v5 的 fetchNextPage 恒 resolve（失败进入 query.error，由区块级
+    // PageError 呈现「操作失败，请稍后重试」）；原 `if (failed)` 提示块从未执行，
+    // 2026-08-17 T-1 复核确认为死代码并删除。
+    await Promise.allSettled(timelineQueries.map((query) => query.fetchNextPage()));
   }
 
   const events: TimelineEvent[] = patientId ? [

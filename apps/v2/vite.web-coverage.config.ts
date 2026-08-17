@@ -6,6 +6,9 @@ export default defineConfig({
   test: {
     testTimeout: 10_000,
     environment: 'jsdom',
+    // T-1：单进程收集（vitest 4 官方选项 fileParallelism: false，自动覆盖 maxWorkers=1），
+    // 避免多 worker v8 合并丢失分支表（与服务端覆盖配置同口径）。
+    fileParallelism: false,
     coverage: {
       provider: 'v8',
       reportsDirectory: 'coverage-web',

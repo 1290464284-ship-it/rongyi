@@ -38,7 +38,6 @@ export class PayMethodService {
         parentId,
         sortOrder: Number(row.sortOrder ?? 0),
         active: Boolean(row.active),
-        /* v8 ignore next -- V8 does not report the false ternary branch despite direct coverage of non-null remark rows. */
         remark: row.remark == null ? null : String(row.remark),
         children: [],
       });

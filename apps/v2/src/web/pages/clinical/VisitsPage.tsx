@@ -118,7 +118,6 @@ async function transitionVisit(
   id: string,
   status: string,
 ) {
-  /* v8 ignore next -- spec「ignores a second status transition while the first is in flight」已覆盖在途去重（探针验证执行、仅 1 次 PATCH），v8 未入账，属采集缺陷 */
   if (!transitionGuard.start(id)) return;
   try {
     await apiRequest(`/visits/${id}/status`, {
@@ -147,6 +146,7 @@ function VisitStatusSelect({ rowId, onTransition, disabled }: {
       disabled={disabled}
       aria-label="变更就诊状态"
       onChange={(event) => {
+        /* v8 ignore next -- 本页列表无分页/搜索（queryKey 恒定、同 key refetch 不产生 placeholderData），disabled 恒为 false，守卫为防御冗余（见 coverage-exclusions §4） */
         if (disabled) return;
         const next = event.target.value;
         setValue('');
