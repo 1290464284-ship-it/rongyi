@@ -145,6 +145,8 @@ Web **96.82% / 92.94% / 98.66% / 98.58%**，双门禁全绿——覆盖率口径
 
 ## 5. 其他已知取舍
 
+- W-11 拆分（2026-08-17）：5 个新文件首次携带 v8-ignore 标记（inventory-workflow-actions ×1 / ProcessingRowActions ×2 / charges-actions ×2 / resource-page-readonly ×1 / resource-page-utils ×4），均为拆分时随代码物理搬移的既有登记标记（总数 259 不变，仅换文件归属），per-file 基线已同步登记。
+
 - 质量分公式不含 lint/typecheck/安全扫描分项（这些是独立硬门禁，非指标）。
 - `pnpm verify` 现包含 mutation（约 13 分钟）与 quality-score、v8-ignore ratchet，
   本地全量 verify 耗时显著上升；快速迭代可用 `verify:critical`（typecheck+test+build）。
