@@ -42,9 +42,9 @@ function cspNonce(): { name: string; apply: 'build'; transformIndexHtml: { order
 export default defineConfig({
   plugins: [react(), devCsp(), cspNonce()],
   test: {
-    // 重负载（数据库引导/加密备份/restore 全链路）在并行覆盖门禁下可能超过默认 5s；
-    // 统一放宽到 20s，避免资源争抢造成的误报，同时仍能捕获真正的挂起。
-    testTimeout: 20_000,
+    // 真实 sleep 已全部迁移 fake timers（2026-08-16 起），收紧到 10s 暴露真正挂起；
+    // 覆盖门禁并行下仍留足余量（单用例最坏 ~3s）。
+    testTimeout: 10_000,
     coverage: {
       provider: 'v8',
       reportsDirectory: 'coverage',

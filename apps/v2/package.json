@@ -158,8 +158,12 @@
     ],
     "extraResources": [
       {
-        "from": "legacy",
-        "to": "legacy"
+        "from": "legacy/dental.sqlite",
+        "to": "legacy/dental.sqlite"
+      },
+      {
+        "from": "legacy/schema/legacy-schema.generated.sql",
+        "to": "legacy/schema/legacy-schema.generated.sql"
       }
     ],
     "asarUnpack": [],

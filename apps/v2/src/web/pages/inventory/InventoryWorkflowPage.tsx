@@ -99,10 +99,8 @@ export function InventoryWorkflowPage() {
     {
       key: 'status',
       label: '状态',
-      render: (row) => {
-        /* v8 ignore next -- pendingPurchaseRows 已过滤为恒 PENDING，标签查表恒命中，兜底为防御冗余 */
-        return PURCHASE_STATUS_LABELS[String(row.status)] ?? String(row.status);
-      },
+      // W-2 起列表已按 status=PENDING 服务端过滤，标签查表恒命中（删除兜底与 v8 排除）。
+      render: (row) => PURCHASE_STATUS_LABELS[String(row.status)],
     },
     {
       key: 'actions',

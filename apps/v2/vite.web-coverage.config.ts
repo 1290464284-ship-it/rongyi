@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   test: {
-    testTimeout: 20_000,
+    testTimeout: 10_000,
     environment: 'jsdom',
     coverage: {
       provider: 'v8',

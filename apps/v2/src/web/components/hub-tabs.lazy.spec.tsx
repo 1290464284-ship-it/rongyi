@@ -137,6 +137,7 @@ describe('hub tab lazy loaders', () => {
     vi.mocked(apiRequest).mockReset();
   });
 
+  // 全量挂载所有 hub 的自定义页（~30 个组件含重页面），整体耗时 >10s，单独放宽超时。
   it('resolves every custom hub tab through its lazy loader', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
       if (path === '/stats/cost-share') return { rows: [], summary: {} };
@@ -162,5 +163,5 @@ describe('hub tab lazy loaders', () => {
         expect(await screen.findByText(expected!)).toBeDefined();
       }
     }
-  });
+  }, 60_000);
 });

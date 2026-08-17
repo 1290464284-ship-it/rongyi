@@ -132,14 +132,19 @@ const quality = {
     routeInventory: openapi.routeEntries,
   },
 };
+// T-3：公式纳入 statements/functions（此前只用 branches/lines，语句与函数覆盖退步不影响分数）。
+// 权重：分支 0.3（服务端+Web）、语句 0.2、函数 0.1、变异 0.2、路由 0.15、flaky 0.05。
 quality.score = Math.round(
   10_000 * (
-    0.2 * serverCoverage.branches
-    + 0.2 * webCoverage.branches
+    0.15 * serverCoverage.branches
+    + 0.15 * webCoverage.branches
+    + 0.1 * serverCoverage.statements
+    + 0.1 * webCoverage.statements
+    + 0.05 * serverCoverage.functions
+    + 0.05 * webCoverage.functions
     + 0.2 * (mutation.score ?? 0)
-    + 0.25 * openapi.routePathCoverage
-    + 0.1 * (1 - flaky.flakinessRate)
-    + 0.05 * serverCoverage.lines
+    + 0.15 * openapi.routePathCoverage
+    + 0.05 * (1 - flaky.flakinessRate)
   ),
 ) / 100;
 
