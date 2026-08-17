@@ -25,6 +25,5 @@ export function maxValue(rows: ChartRow[], key: (row: ChartRow) => number): numb
   return Math.max(1, ...rows.map((row) => Number(key(row) || 0)));
 }
 
-// CSV 工具与本地日期已下沉到 lib/（共享组件不得依赖页面模块）；此处 re-export 保持既有导入兼容。
-export { csvCell, downloadTextFile } from '../../lib/csv';
+export { csvCell } from '../../lib/csv';
 export { todayLocalDate as today } from '../../lib/format';
