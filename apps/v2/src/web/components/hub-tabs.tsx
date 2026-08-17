@@ -168,7 +168,7 @@ export const systemHubTabs: HubTab[] = [
 export const analyticsHubTabs: HubTab[] = [
   { id: 'dashboard', label: '经营报表', kind: 'custom', component: AnalyticsDashboardPage },
   { id: 'clinicOverview', label: '多门店', kind: 'custom', component: ClinicOverviewPage, bossOnly: true },
-  { id: 'monthly', label: '月度报表', kind: 'custom', component: () => <ResourcePage title={'月度报表'} endpoint="/stats/revenue?groupBy=month" /> },
+  { id: 'monthly', label: '月度报表', kind: 'custom', component: () => <ResourcePage title={'月度报表'} endpoint="/stats/revenue?groupBy=month" columnTypes={{ revenue: 'money' }} /> },
   { id: 'inventoryReport', label: '库存报表', kind: 'custom', component: () => <ResourcePage title={'库存报表'} endpoint="/stats/inventory" /> },
   { id: 'costShare', label: '分账统计', kind: 'custom', component: CostShareTab },
   { id: 'rfm', label: 'RFM', kind: 'custom', component: () => <ResourcePage title="RFM" endpoint="/analytics/rfm" /> },

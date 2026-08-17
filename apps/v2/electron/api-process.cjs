@@ -327,11 +327,14 @@ async function ensureApiServerRunning() {
   if (state.apiProcess && !state.apiProcess.killed) {
     const processToStop = state.apiProcess;
     processToStop.manualStop = true;
+    // E-1：重启前的停止窗口同样保留引用供 terminateApiSync 兜底。
+    state.stoppingProcess = processToStop;
     await new Promise((resolve) => {
       let settled = false;
       const done = () => {
         if (settled) return;
         settled = true;
+        if (state.stoppingProcess === processToStop) state.stoppingProcess = null;
         resolve();
       };
       processToStop.once('exit', done);
@@ -361,11 +364,14 @@ async function stopApi() {
   state.apiProcess = null;
   if (processToStop && !processToStop.killed) {
     processToStop.manualStop = true;
+    // E-1：宽限窗口内保留引用，terminateApiSync 仍可强杀；子进程退出后清掉。
+    state.stoppingProcess = processToStop;
     return new Promise((resolve) => {
       let settled = false;
       const done = () => {
         if (settled) return;
         settled = true;
+        if (state.stoppingProcess === processToStop) state.stoppingProcess = null;
         resolve();
       };
       processToStop.once('exit', done);
@@ -414,7 +420,7 @@ function terminateApiSync() {
     clearInterval(state.apiHeartbeatTimer);
     state.apiHeartbeatTimer = null;
   }
-  const proc = state.apiProcess;
+  const proc = state.apiProcess ?? state.stoppingProcess;
   if (!proc || proc.killed || proc.pid == null) return;
   let killed = false;
   try {

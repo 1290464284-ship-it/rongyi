@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
-import { SystemClock } from '../../infrastructure/clock';
-import { tenantAnd, tenantParams, tenantWhere } from '../../infrastructure/tenant';
+import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import { addInventoryStock, deductInventoryStock, inventoryStockAfter, recordInventoryTransaction } from './inventory-ledger';
 import { runInTransactionImmediate } from './common';
+import { listInventoryBatches, normalizeDays } from './inventory-batch-list';
 import type { AppContext } from '../../../domain/contracts';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -60,50 +60,21 @@ export class InventoryBatchService {
   ) {}
 
   /** 该租户的启用批次（含 item name/code/spec），以及 days 天内到期的子集。 */
-  list(context: AppContext, filter?: { itemId?: string; days?: number; limit?: number }): {
+  list(context: AppContext, filter?: {
+    itemId?: string;
+    days?: number;
+    limit?: number;
+    page?: number;
+    pageSize?: number;
+  }): {
     batches: InventoryBatchRow[];
     expiring: InventoryBatchRow[];
     truncated: boolean;
+    total?: number;
+    page?: number;
+    pageSize?: number;
   } {
-    const days = normalizeDays(filter?.days);
-    const limit = Number.isFinite(Number(filter?.limit)) && Number(filter!.limit) >= 1
-      ? Math.min(5_000, Math.floor(Number(filter!.limit)))
-      : 1_000;
-    const conditions = ['B.deletedAt IS NULL', 'B.active = 1'];
-    const params: Array<string | number | null> = [];
-    if (filter?.itemId) {
-      conditions.push('B.itemId = ?');
-      params.push(filter.itemId);
-    }
-    const tenant = tenantWhere(context.clinicId, 'B.clinicId');
-    const sql = `
-      SELECT B.id, B.itemId, B.batchNo, B.productionDate, B.expiryDate,
-             B.initialQuantity, B.remainingQuantity, B.supplierId, B.purchaseOrderId,
-             B.active, B.clinicId, B.createdAt, B.updatedAt,
-             I.name AS itemName, I.code AS itemCode, I.spec AS itemSpec
-      FROM InventoryBatch B
-      INNER JOIN InventoryItem I ON I.id = B.itemId AND I.deletedAt IS NULL
-      WHERE ${conditions.join(' AND ')}${tenant.sql ? ` AND ${tenant.sql}` : ''}
-      ORDER BY B.expiryDate ASC, B.createdAt DESC
-      LIMIT ?
-    `;
-    const batches = this.db.prepare(sql).all(...params, ...tenant.params, limit) as InventoryBatchRow[];
-    const now = context.now();
-    const today = new SystemClock().clinicDate(now);
-    const cutoff = new SystemClock().clinicDate(new Date(now.getTime() + days * 86_400_000));
-    const expiring = this.db.prepare(
-      `SELECT B.id, B.itemId, B.batchNo, B.productionDate, B.expiryDate,
-              B.initialQuantity, B.remainingQuantity, B.supplierId, B.purchaseOrderId,
-              B.active, B.clinicId, B.createdAt, B.updatedAt,
-              I.name AS itemName, I.code AS itemCode, I.spec AS itemSpec
-       FROM InventoryBatch B
-       INNER JOIN InventoryItem I ON I.id = B.itemId AND I.deletedAt IS NULL
-       WHERE B.deletedAt IS NULL AND B.active = 1
-         AND B.expiryDate >= ? AND B.expiryDate <= ? AND B.remainingQuantity > 0${tenant.sql ? ` AND ${tenant.sql}` : ''}
-       ORDER BY B.expiryDate ASC
-       LIMIT ?`,
-    ).all(today, cutoff, ...tenant.params, limit) as InventoryBatchRow[];
-    return { batches, expiring, truncated: batches.length === limit };
+    return listInventoryBatches(this.db, context, filter);
   }
 
   /** 新建批次：批次入库并同步增加物料库存，落一条 IN 流水（事务）。 */
@@ -435,11 +406,4 @@ export class InventoryBatchService {
     run();
     return { generated, total: expiring.length };
   }
-}
-
-function normalizeDays(days: number | undefined): number {
-  const value = Number(days);
-  if (!Number.isFinite(value)) return 30;
-  // 上限 1..3650：超大值会造成无效的全表范围扫描（与 workflow expiring 路由一致）
-  return Math.min(Math.max(Math.floor(value), 1), 3650);
 }

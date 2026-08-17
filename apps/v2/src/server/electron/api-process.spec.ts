@@ -18,6 +18,7 @@ interface ApiEnvModule {
 
 interface ElectronState {
   apiProcess: { pid: number; killed: boolean; kill: ReturnType<typeof vi.fn> } | null;
+  stoppingProcess: { pid: number; killed: boolean; kill: ReturnType<typeof vi.fn> } | null;
   apiHeartbeatTimer: ReturnType<typeof setInterval> | null;
 }
 
@@ -56,6 +57,25 @@ describe('electron api process', () => {
     const api = loadElectronModule<ApiProcessModule>('../../../electron/api-process.cjs', { electron });
     state.apiProcess = null;
     expect(() => api.terminateApiSync()).not.toThrow();
+  });
+
+  it('E-1: terminateApiSync falls back to the process still being stopped', () => {
+    const kill = vi.fn(() => true);
+    const electron = {
+      app: { getPath: () => 'userData', isPackaged: false },
+      BrowserWindow: { getAllWindows: () => [] },
+      Notification: { isSupported: () => false },
+    };
+    const state = loadElectronModule<ElectronState>('../../../electron/state.cjs', {});
+    const api = loadElectronModule<ApiProcessModule>('../../../electron/api-process.cjs', {
+      electron,
+      './state.cjs': state,
+    });
+    // stopApi 已把 apiProcess 置空、宽限窗口未结束：stoppingProcess 仍可被强杀。
+    state.apiProcess = null;
+    state.stoppingProcess = { pid: 43, killed: false, kill };
+    api.terminateApiSync();
+    expect(kill).toHaveBeenCalled();
   });
 
   it('drops an inherited V2_DB_PATH so runtime data stays under userData', () => {

@@ -4,6 +4,9 @@ import { useSearchParams } from 'react-router';
 import { apiRequest } from '../../lib/api';
 import type { Page } from '../../lib/types';
 import { ConfirmDialog, Dialog, LoadingState, PageError, PagePager, SearchableSelect } from '../../components';
+
+/** 批次列表每页条数（W-1 分页）。 */
+const BATCH_PAGE_SIZE = 20;
 import { errorMessage } from '../../lib/messages';
 import { useToast } from '../../lib/toast-context';
 import { useAsyncAction } from '../../hooks/use-async-action';
@@ -39,6 +42,8 @@ export function InventoryPage() {
   const [deleteTarget, setDeleteTarget] = useState<BatchRow | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'report'>('overview');
   const [page, setPage] = useState(1);
+  // W-1：批次列表独立分页（服务端 OFFSET，total 驱动）
+  const [batchPage, setBatchPage] = useState(1);
   const [barcodeSearch, setBarcodeSearch] = useState('');
   const [barcodeTarget, setBarcodeTarget] = useState<Record<string, unknown> | null>(null);
   const query = useQuery({
@@ -65,9 +70,9 @@ export function InventoryPage() {
     queryFn: () => apiRequest<{ items: Array<Record<string, unknown>>; truncated: boolean }>('/inventory/expiring?days=30'),
   });
   const batches = useQuery({
-    queryKey: ['inventory-batches', itemId ?? ''],
+    queryKey: ['inventory-batches', itemId ?? '', batchPage],
     queryFn: () => apiRequest<BatchListData>(
-      itemId ? `/inventory-batches?itemId=${encodeURIComponent(itemId)}` : '/inventory-batches',
+      itemId ? `/inventory-batches?itemId=${encodeURIComponent(itemId)}&page=${batchPage}&pageSize=${BATCH_PAGE_SIZE}` : '/inventory-batches',
     ),
     // 未选中项目时不拉取：避免 itemId 为空时退化为全量批次拉取（历史数据可增长）。
     enabled: Boolean(itemId),
@@ -435,6 +440,15 @@ export function InventoryPage() {
                 ))}
               </tbody>
             </table>
+            {/* W-1：批次列表分页（服务端 OFFSET，total 驱动 hasNext） */}
+            {batches.data && (batches.data.total ?? 0) > 0 && (
+              <PagePager
+                page={batchPage}
+                hasNext={(batchPage * BATCH_PAGE_SIZE) < (batches.data?.total ?? 0)}
+                onPageChange={setBatchPage}
+                disabled={stale}
+              />
+            )}
           </div>
           <div className="page-head">
             <h2>批次效期提醒</h2>

@@ -24,7 +24,7 @@ describe('InventoryWorkflowPage', () => {
 
   it('applies selected replenishment suggestions', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/purchaseOrders?page=1&pageSize=100') {
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100&status=PENDING') {
         return { items: [{ id: 'po-1', status: 'PENDING', totalAmount: 150 }], total: 1 };
       }
       if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') {
@@ -39,7 +39,7 @@ describe('InventoryWorkflowPage', () => {
       if (path === '/resources/processingOrders?page=1&pageSize=100') {
         return { items: [], total: 0 };
       }
-      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') {
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100&status=OPEN') {
         return { items: [{ id: 's-1', inventoryId: 'item-1', rop: 5, suggestedQty: 3, status: 'OPEN' }], total: 1 };
       }
       return {};
@@ -59,7 +59,7 @@ describe('InventoryWorkflowPage', () => {
 
   it('generates suggestions and transitions processing orders', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/purchaseOrders?page=1&pageSize=100') {
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100&status=PENDING') {
         return { items: [], total: 0 };
       }
       if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') {
@@ -68,7 +68,7 @@ describe('InventoryWorkflowPage', () => {
       if (path === '/resources/processingOrders?page=1&pageSize=100') {
         return { items: [{ id: 'proc-1', status: 'DRAFT' }], total: 1 };
       }
-      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') {
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100&status=OPEN') {
         return { items: [], total: 0 };
       }
       return {};
@@ -88,7 +88,7 @@ describe('InventoryWorkflowPage', () => {
 
   it('reports replenishment apply failures', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/purchaseOrders?page=1&pageSize=100') {
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100&status=PENDING') {
         return { items: [], total: 0 };
       }
       if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') {
@@ -97,7 +97,7 @@ describe('InventoryWorkflowPage', () => {
       if (path === '/resources/processingOrders?page=1&pageSize=100') {
         return { items: [], total: 0 };
       }
-      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') {
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100&status=OPEN') {
         return { items: [{ id: 's-2', inventoryId: 'item-2', rop: 5, suggestedQty: 3, status: 'OPEN' }], total: 1 };
       }
       if (path === '/stocktakes?page=1&pageSize=200') {
@@ -117,7 +117,7 @@ describe('InventoryWorkflowPage', () => {
 
   it('uses a generic message for non-error workflow failures', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/purchaseOrders?page=1&pageSize=100') {
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100&status=PENDING') {
         return { items: [], total: 0 };
       }
       if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') {
@@ -126,7 +126,7 @@ describe('InventoryWorkflowPage', () => {
       if (path === '/resources/processingOrders?page=1&pageSize=100') {
         return { items: [], total: 0 };
       }
-      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') {
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100&status=OPEN') {
         return { items: [{ id: 's-3', inventoryId: 'item-3', rop: 5, suggestedQty: 3, status: 'OPEN' }], total: 1 };
       }
       throw 'boom';
@@ -140,10 +140,10 @@ describe('InventoryWorkflowPage', () => {
 
   it('renders stocktake list with status labels and per-status actions', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/purchaseOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100&status=PENDING') return { items: [], total: 0 };
       if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { items: [], total: 0 };
       if (path === '/resources/processingOrders?page=1&pageSize=100') return { items: [], total: 0 };
-      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100&status=OPEN') return { items: [], total: 0 };
       if (path === '/stocktakes?page=1&pageSize=200') {
         return {
           items: [
@@ -175,10 +175,10 @@ describe('InventoryWorkflowPage', () => {
 
   it('creates a stocktake from the form', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/purchaseOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100&status=PENDING') return { items: [], total: 0 };
       if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { items: [], total: 0 };
       if (path === '/resources/processingOrders?page=1&pageSize=100') return { items: [], total: 0 };
-      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100&status=OPEN') return { items: [], total: 0 };
       if (path === '/stocktakes?page=1&pageSize=200') return { items: [], total: 0 };
       return {};
     });
@@ -199,10 +199,10 @@ describe('InventoryWorkflowPage', () => {
 
   it('expands a stocktake and records counted stock per item', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/purchaseOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100&status=PENDING') return { items: [], total: 0 };
       if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { items: [], total: 0 };
       if (path === '/resources/processingOrders?page=1&pageSize=100') return { items: [], total: 0 };
-      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100&status=OPEN') return { items: [], total: 0 };
       if (path === '/stocktakes?page=1&pageSize=200') {
         return { items: [{ id: 'st-1', number: 'PD-001', status: 'IN_PROGRESS', startedById: 'user-1', startedAt: '2026-08-05T10:00:00.000Z', itemCount: 2, differenceCount: 0 }], total: 1 };
       }
@@ -235,10 +235,10 @@ describe('InventoryWorkflowPage', () => {
 
   it('triggers lock, complete and cancel APIs by status', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/purchaseOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100&status=PENDING') return { items: [], total: 0 };
       if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { items: [], total: 0 };
       if (path === '/resources/processingOrders?page=1&pageSize=100') return { items: [], total: 0 };
-      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100&status=OPEN') return { items: [], total: 0 };
       if (path === '/stocktakes?page=1&pageSize=200') {
         return {
           items: [
@@ -272,12 +272,12 @@ describe('InventoryWorkflowPage', () => {
     let resolveReceive: ((value: unknown) => void) | undefined;
     vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
       const method = String(init?.method ?? 'GET').toUpperCase();
-      if (path === '/resources/purchaseOrders?page=1&pageSize=100') {
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100&status=PENDING') {
         return { items: [{ id: 'po-1', number: 'PO-1', status: 'PENDING', totalAmount: 150 }], total: 1 };
       }
       if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { items: [], total: 0 };
       if (path === '/resources/processingOrders?page=1&pageSize=100') return { items: [], total: 0 };
-      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100&status=OPEN') return { items: [], total: 0 };
       if (path === '/stocktakes?page=1&pageSize=200') return { items: [], total: 0 };
       if (method === 'PATCH' && path === '/purchase-orders/po-1/receive') {
         return await new Promise((resolve) => { resolveReceive = resolve; });
@@ -295,10 +295,10 @@ describe('InventoryWorkflowPage', () => {
 
   it('applies nothing when no suggestion is selected and unchecks a selection', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/purchaseOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100&status=PENDING') return { items: [], total: 0 };
       if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { items: [], total: 0 };
       if (path === '/resources/processingOrders?page=1&pageSize=100') return { items: [], total: 0 };
-      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') {
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100&status=OPEN') {
         return { items: [{ id: 's-1', inventoryId: 'item-1', rop: 5, suggestedQty: 3, status: 'OPEN' }], total: 1 };
       }
       return {};
@@ -317,10 +317,10 @@ describe('InventoryWorkflowPage', () => {
   it('validates stocktake input and reports save failures', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
       const method = String(init?.method ?? 'GET').toUpperCase();
-      if (path === '/resources/purchaseOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100&status=PENDING') return { items: [], total: 0 };
       if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { items: [], total: 0 };
       if (path === '/resources/processingOrders?page=1&pageSize=100') return { items: [], total: 0 };
-      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100&status=OPEN') return { items: [], total: 0 };
       if (path === '/stocktakes?page=1&pageSize=200') {
         return { items: [{ id: 'st-1', number: 'PD-001', status: 'IN_PROGRESS', startedById: 'user-1', startedAt: '2026-08-05T10:00:00.000Z', itemCount: 1, differenceCount: 0 }], total: 1 };
       }
@@ -344,10 +344,10 @@ describe('InventoryWorkflowPage', () => {
 
   it('requires a stocktake number and cancels locked stocktakes', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/purchaseOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100&status=PENDING') return { items: [], total: 0 };
       if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { items: [], total: 0 };
       if (path === '/resources/processingOrders?page=1&pageSize=100') return { items: [], total: 0 };
-      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100&status=OPEN') return { items: [], total: 0 };
       if (path === '/stocktakes?page=1&pageSize=200') {
         return {
           items: [
@@ -373,7 +373,7 @@ describe('InventoryWorkflowPage', () => {
 
   it('renders sparse rows with fallbacks and unknown statuses', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/purchaseOrders?page=1&pageSize=100') {
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100&status=PENDING') {
         return { items: [{ id: 'po-9', status: 'PENDING' }], total: 1 };
       }
       if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') {
@@ -382,7 +382,7 @@ describe('InventoryWorkflowPage', () => {
       if (path === '/resources/processingOrders?page=1&pageSize=100') {
         return { items: [{ id: 'proc-9', status: 'WEIRD' }], total: 1 };
       }
-      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') {
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100&status=OPEN') {
         return { items: [{ id: 's-9', inventoryId: null, rop: null, suggestedQty: null, status: 'OPEN' }], total: 1 };
       }
       if (path === '/stocktakes?page=1&pageSize=200') {
@@ -399,12 +399,12 @@ describe('InventoryWorkflowPage', () => {
 
   it('transitions processing orders through every status option', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/purchaseOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100&status=PENDING') return { items: [], total: 0 };
       if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { items: [], total: 0 };
       if (path === '/resources/processingOrders?page=1&pageSize=100') {
         return { items: [{ id: 'proc-1', status: 'DRAFT' }], total: 1 };
       }
-      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100&status=OPEN') return { items: [], total: 0 };
       if (path === '/stocktakes?page=1&pageSize=200') return { items: [], total: 0 };
       return {};
     });
@@ -423,10 +423,10 @@ describe('InventoryWorkflowPage', () => {
 
   it('validates empty counted stock and saves with fallback columns', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/purchaseOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100&status=PENDING') return { items: [], total: 0 };
       if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { items: [], total: 0 };
       if (path === '/resources/processingOrders?page=1&pageSize=100') return { items: [], total: 0 };
-      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100&status=OPEN') return { items: [], total: 0 };
       if (path === '/stocktakes?page=1&pageSize=200') {
         return {
           items: [{ id: 'st-1', number: null, status: 'IN_PROGRESS', startedById: null, startedAt: null, itemCount: null, differenceCount: null }],
@@ -454,10 +454,10 @@ describe('InventoryWorkflowPage', () => {
   it('reports stocktake action failures', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string, init?: RequestInit) => {
       const method = String(init?.method ?? 'GET').toUpperCase();
-      if (path === '/resources/purchaseOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100&status=PENDING') return { items: [], total: 0 };
       if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { items: [], total: 0 };
       if (path === '/resources/processingOrders?page=1&pageSize=100') return { items: [], total: 0 };
-      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100&status=OPEN') return { items: [], total: 0 };
       if (path === '/stocktakes?page=1&pageSize=200') {
         return {
           items: [{ id: 'st-1', number: 'PD-001', status: 'IN_PROGRESS', startedById: 'user-1', startedAt: '2026-08-05T10:00:00.000Z', itemCount: 1, differenceCount: 0 }],
@@ -474,12 +474,12 @@ describe('InventoryWorkflowPage', () => {
 
   it('shows the truncated stocktake notice and existing counted stock fallbacks', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/purchaseOrders?page=1&pageSize=100') {
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100&status=PENDING') {
         return { items: [{ id: 'po-2', number: 'PO-2', supplierId: 'sup-1', status: 'PENDING', totalAmount: 150 }], total: 1 };
       }
       if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { items: [], total: 0 };
       if (path === '/resources/processingOrders?page=1&pageSize=100') return { items: [], total: 0 };
-      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100&status=OPEN') return { items: [], total: 0 };
       if (path === '/stocktakes?page=1&pageSize=200') {
         return {
           items: [
@@ -509,10 +509,10 @@ describe('InventoryWorkflowPage', () => {
 
   it('includes null-status suggestions as open and applies them', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/purchaseOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100&status=PENDING') return { items: [], total: 0 };
       if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { items: [], total: 0 };
       if (path === '/resources/processingOrders?page=1&pageSize=100') return { items: [], total: 0 };
-      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') {
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100&status=OPEN') {
         return {
           items: [
             { id: 's-1', inventoryId: null, rop: 3, suggestedQty: 2, status: null },
@@ -538,10 +538,10 @@ describe('InventoryWorkflowPage', () => {
 
   it('collapses an expanded stocktake and shows stocktake load errors', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/purchaseOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100&status=PENDING') return { items: [], total: 0 };
       if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { items: [], total: 0 };
       if (path === '/resources/processingOrders?page=1&pageSize=100') return { items: [], total: 0 };
-      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100&status=OPEN') return { items: [], total: 0 };
       if (path === '/stocktakes?page=1&pageSize=200') {
         return {
           items: [{ id: 'st-1', number: 'PD-001', status: 'IN_PROGRESS', startedById: 'user-1', startedAt: '2026-08-05T10:00:00.000Z', itemCount: 1, differenceCount: 0 }],
@@ -562,10 +562,10 @@ describe('InventoryWorkflowPage', () => {
 
   it('shows stocktake list errors without crashing', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/purchaseOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100&status=PENDING') return { items: [], total: 0 };
       if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { items: [], total: 0 };
       if (path === '/resources/processingOrders?page=1&pageSize=100') return { items: [], total: 0 };
-      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100&status=OPEN') return { items: [], total: 0 };
       if (path === '/stocktakes?page=1&pageSize=200') throw new Error('stocktake list failed');
       return {};
     });
@@ -575,10 +575,10 @@ describe('InventoryWorkflowPage', () => {
 
   it('creates a stocktake without a note', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/purchaseOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100&status=PENDING') return { items: [], total: 0 };
       if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { items: [], total: 0 };
       if (path === '/resources/processingOrders?page=1&pageSize=100') return { items: [], total: 0 };
-      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100&status=OPEN') return { items: [], total: 0 };
       if (path === '/stocktakes?page=1&pageSize=200') return { items: [], total: 0 };
       return {};
     });
@@ -597,10 +597,10 @@ describe('InventoryWorkflowPage', () => {
 
   it('shows truncated notices for purchase, processing, and suggestions panels', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/purchaseOrders?page=1&pageSize=100') return { items: [], total: 0, truncated: true };
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100&status=PENDING') return { items: [], total: 0, truncated: true };
       if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { items: [], total: 1, truncated: true };
       if (path === '/resources/processingOrders?page=1&pageSize=100') return { items: [], total: 0, truncated: true };
-      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') {
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100&status=OPEN') {
         return { items: [], total: 1, page: 1, pageSize: 100 };
       }
       if (path === '/stocktakes?page=1&pageSize=200') return { items: [], total: 0 };
@@ -616,10 +616,10 @@ describe('InventoryWorkflowPage', () => {
 
   it('renders missing panel item arrays and stocktake item errors', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/purchaseOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100&status=PENDING') return { items: [], total: 0 };
       if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { total: 1 };
       if (path === '/resources/processingOrders?page=1&pageSize=100') return { total: 1 };
-      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') return { total: 1 };
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100&status=OPEN') return { total: 1 };
       if (path === '/stocktakes?page=1&pageSize=200') {
         return { items: [{ id: 'st-1', number: 'PD-001', status: 'IN_PROGRESS', startedById: 'user-1', startedAt: '2026-08-05T10:00:00.000Z', itemCount: 1, differenceCount: 0 }], total: 1 };
       }
@@ -636,7 +636,7 @@ describe('InventoryWorkflowPage', () => {
 
   it('renders fully sparse purchase, item, and suggestion rows without crashing', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/purchaseOrders?page=1&pageSize=100') {
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100&status=PENDING') {
         return { items: [{ status: 'PENDING' }], total: 1 };
       }
       if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') {
@@ -645,7 +645,7 @@ describe('InventoryWorkflowPage', () => {
       if (path === '/resources/processingOrders?page=1&pageSize=100') {
         return { items: [{ status: 'PROC_UNKNOWN' }], total: 1 };
       }
-      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') {
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100&status=OPEN') {
         return { items: [{ inventoryId: null, status: 'OPEN' }], total: 1 };
       }
       if (path === '/stocktakes?page=1&pageSize=200') return { items: [], total: 0 };
@@ -658,10 +658,10 @@ describe('InventoryWorkflowPage', () => {
 
   it('renders stocktake item rows missing both name and item id', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/purchaseOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100&status=PENDING') return { items: [], total: 0 };
       if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { items: [], total: 0 };
       if (path === '/resources/processingOrders?page=1&pageSize=100') return { items: [], total: 0 };
-      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100&status=OPEN') return { items: [], total: 0 };
       if (path === '/stocktakes?page=1&pageSize=200') {
         return { items: [{ id: 'st-1', number: 'PD-001', status: 'IN_PROGRESS', startedById: 'user-1', startedAt: '2026-08-05T10:00:00.000Z', itemCount: 1, differenceCount: 0 }], total: 1 };
       }
@@ -677,10 +677,10 @@ describe('InventoryWorkflowPage', () => {
 
   it('shows a generic error for non-Error stocktake item failures', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/purchaseOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100&status=PENDING') return { items: [], total: 0 };
       if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { items: [], total: 0 };
       if (path === '/resources/processingOrders?page=1&pageSize=100') return { items: [], total: 0 };
-      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100&status=OPEN') return { items: [], total: 0 };
       if (path === '/stocktakes?page=1&pageSize=200') {
         return { items: [{ id: 'st-1', number: 'PD-001', status: 'IN_PROGRESS', startedById: 'user-1', startedAt: '2026-08-05T10:00:00.000Z', itemCount: 1, differenceCount: 0 }], total: 1 };
       }
@@ -694,10 +694,10 @@ describe('InventoryWorkflowPage', () => {
 
   it('tolerates suggestion pages without total and items', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/purchaseOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100&status=PENDING') return { items: [], total: 0 };
       if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { items: [], total: 0 };
       if (path === '/resources/processingOrders?page=1&pageSize=100') return { items: [], total: 0 };
-      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') return { items: [] };
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100&status=OPEN') return { items: [] };
       if (path === '/stocktakes?page=1&pageSize=200') return { items: [], total: 0 };
       return {};
     });
@@ -708,13 +708,13 @@ describe('InventoryWorkflowPage', () => {
 
   it('pages the replenishment suggestions server-side', async () => {
     vi.mocked(apiRequest).mockImplementation(async (path: string) => {
-      if (path === '/resources/purchaseOrders?page=1&pageSize=100') return { items: [], total: 0 };
+      if (path === '/resources/purchaseOrders?page=1&pageSize=100&status=PENDING') return { items: [], total: 0 };
       if (path === '/resources/purchaseOrderItems?page=1&pageSize=200') return { items: [], total: 0 };
       if (path === '/resources/processingOrders?page=1&pageSize=100') return { items: [], total: 0 };
-      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100') {
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=1&pageSize=100&status=OPEN') {
         return { items: [{ id: 's-1', inventoryId: 'item-1', rop: 5, suggestedQty: 3, status: 'OPEN' }], total: 150, page: 1, pageSize: 100 };
       }
-      if (path === '/resources/inventoryReplenishmentSuggestions?page=2&pageSize=100') {
+      if (path === '/resources/inventoryReplenishmentSuggestions?page=2&pageSize=100&status=OPEN') {
         return { items: [{ id: 's-2', inventoryId: 'item-2', rop: 5, suggestedQty: 3, status: 'OPEN' }], total: 150, page: 2, pageSize: 100 };
       }
       if (path === '/stocktakes?page=1&pageSize=200') return { items: [], total: 0 };
@@ -727,7 +727,7 @@ describe('InventoryWorkflowPage', () => {
     expect(enabledNext).toBeDefined();
     fireEvent.click(enabledNext!);
     await waitFor(() => {
-      expect(apiRequest).toHaveBeenCalledWith('/resources/inventoryReplenishmentSuggestions?page=2&pageSize=100');
+      expect(apiRequest).toHaveBeenCalledWith('/resources/inventoryReplenishmentSuggestions?page=2&pageSize=100&status=OPEN');
     });
   });
 });

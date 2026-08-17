@@ -76,22 +76,36 @@ function fieldToForm(field: ResourceField, value: unknown): string | boolean {
   return String(value);
 }
 
-function formatStatValue(column: string, value: unknown): string {
+/** 只读统计端点表格的列类型（W-8：meta 优先于列名白名单启发式）。 */
+export type StatColumnType = 'money' | 'date' | 'datetime' | 'count' | 'text';
+
+const MONEY_COLUMNS = new Set([
+  'revenue', 'amount', 'totalAmount', 'paidAmount', 'unpaidAmount', 'monetary',
+  'price', 'unitPrice', 'subtotal', 'totalFee', 'totalBalance', 'totalCharged',
+  'totalCommission', 'totalBytes', 'settledAmount', 'amountTotal', 'balance',
+  'cost', 'profit', 'refundAmount', 'discount', 'grandTotal', 'commission',
+]);
+const DATETIME_COLUMNS = new Set([
+  'createdAt', 'updatedAt', 'paidAt', 'completedAt', 'sentAt', 'receivedAt',
+  'deliveredAt', 'issuedAt', 'startTime', 'endTime', 'processedAt', 'approvedAt',
+  'refundedAt', 'lockedAt', 'signedAt', 'reviewedAt', 'calculatedAt', 'nextFollowUpAt',
+  'takenAt',
+]);
+const DATE_COLUMNS = new Set([
+  'birthDate', 'planDate', 'expireDate', 'workDate', 'startDate', 'endDate',
+  'purchaseDate', 'examDate', 'surveyDate', 'recordDate',
+]);
+
+function formatStatValue(column: string, value: unknown, columnType?: StatColumnType): string {
   if (value === null || value === undefined) return '';
   if (typeof value === 'object') return JSON.stringify(value);
-  if (['revenue', 'amount', 'totalAmount', 'paidAmount', 'unpaidAmount', 'monetary', 'price', 'unitPrice', 'subtotal'].includes(column)) {
-    return formatMoney(value);
-  }
-  if (['createdAt', 'updatedAt', 'paidAt', 'completedAt', 'sentAt', 'receivedAt', 'deliveredAt', 'issuedAt', 'startTime', 'endTime'].includes(column)) {
-    return formatDateTime(value);
-  }
-  if (['birthDate', 'planDate', 'expireDate', 'workDate', 'startDate', 'endDate', 'purchaseDate', 'examDate', 'surveyDate'].includes(column)) {
-    return formatDate(value);
-  }
+  if (columnType === 'money' || MONEY_COLUMNS.has(column)) return formatMoney(value);
+  if (columnType === 'datetime' || DATETIME_COLUMNS.has(column)) return formatDateTime(value);
+  if (columnType === 'date' || DATE_COLUMNS.has(column)) return formatDate(value);
   return formatDisplayValue(value);
 }
 
-function ReadOnlyListPage({ title, endpoint }: { title: string; endpoint: string }) {
+function ReadOnlyListPage({ title, endpoint, columnTypes }: { title: string; endpoint: string; columnTypes?: Record<string, StatColumnType> }) {
   const query = useQuery({
     queryKey: ['stat', endpoint],
     queryFn: () => apiRequest<Array<Record<string, unknown>> | { items: Array<Record<string, unknown>>; truncated?: boolean }>(endpoint),
@@ -105,7 +119,8 @@ function ReadOnlyListPage({ title, endpoint }: { title: string; endpoint: string
   const dataColumns = columns.map((column) => ({
     key: column,
     label: SIMPLE_LIST_COLUMN_LABELS[column] ?? column,
-    render: (row: Record<string, unknown>) => formatStatValue(column, row[column]),
+    // W-8：显式列类型元数据优先，未声明时按扩展白名单/值兜底。
+    render: (row: Record<string, unknown>) => formatStatValue(column, row[column], columnTypes?.[column]),
   }));
   function exportCsv() {
     /* v8 ignore next -- 导出按钮在 truncated 时 disabled，onClick 不会触发 */
@@ -129,8 +144,15 @@ function ReadOnlyListPage({ title, endpoint }: { title: string; endpoint: string
   );
 }
 
-export function ResourcePage({ resource, title, endpoint, initialSearch }: { resource?: string; title?: string; endpoint?: string; initialSearch?: string }) {
-  if (endpoint) return <ReadOnlyListPage title={title ?? '报表'} endpoint={endpoint} />;
+export function ResourcePage({ resource, title, endpoint, initialSearch, columnTypes }: {
+  resource?: string;
+  title?: string;
+  endpoint?: string;
+  initialSearch?: string;
+  /** 只读统计端点的列类型元数据（W-8）：显式声明金额/日期列，避免列名启发式漏判。 */
+  columnTypes?: Record<string, StatColumnType>;
+}) {
+  if (endpoint) return <ReadOnlyListPage title={title ?? '报表'} endpoint={endpoint} columnTypes={columnTypes} />;
   return <ResourceCrudPage resource={resource} initialSearch={initialSearch} />;
 }
 

@@ -27,7 +27,8 @@ export function InventoryWorkflowPage() {
   const [stocktakePage, setStocktakePage] = useState(1);
   const purchase = useQuery({
     queryKey: ['po-workflow', purchasePage],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>(`/resources/purchaseOrders?page=${purchasePage}&pageSize=100`),
+    // W-2：待收货列表改服务端 status 过滤（通用列表等值过滤），不再依赖页内 filter 截断。
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>(`/resources/purchaseOrders?page=${purchasePage}&pageSize=100&status=PENDING`),
   });
   const purchaseItems = useQuery({
     queryKey: ['po-items-workflow', purchaseItemsPage],
@@ -43,10 +44,12 @@ export function InventoryWorkflowPage() {
   });
   const suggestions = useQuery({
     queryKey: ['suggestions-workflow', suggestionsPage],
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>(`/resources/inventoryReplenishmentSuggestions?page=${suggestionsPage}&pageSize=100`),
+    // W-2：待应用建议改服务端 status 过滤（OPEN），不再依赖页内 filter 截断。
+    queryFn: () => apiRequest<Page<Record<string, unknown>>>(`/resources/inventoryReplenishmentSuggestions?page=${suggestionsPage}&pageSize=100&status=OPEN`),
   });
   const openSuggestions = useMemo(
     () => (suggestions.data?.items ?? []).filter((row) => {
+      // 服务端已按 OPEN 过滤；保留 null→OPEN 的历史兜底作为次级防御。
       const status = row.status === null || row.status === undefined ? 'OPEN' : String(row.status);
       return status === 'OPEN';
     }),
