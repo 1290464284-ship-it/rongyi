@@ -194,6 +194,20 @@ See `MATURITY.md` for the current production-readiness checklist.
 Packaging, signing, update channel, internal builds, and post-install
 verification are documented in `RELEASE.md`.
 
+## Unattended Fleet SSH (无人值守维护访问)
+
+Fleet maintenance machines register an SSH key on the GitHub account
+`1290464284-ship-it` as the fallback transport when HTTPS git access is
+blocked. Each machine keeps its own key (`~/.ssh/id_ed25519`) and registers
+the public key once with a unique title `dsh-agent@<COMPUTERNAME>`; the
+private key never leaves that machine.
+
+B-2.2 evidence (2026-08-16): key `dsh-agent@PC-20260410UFBQ`
+(`SHA256:q4iXBa275F/ImM/DUetJdr0aJYfAsB2WRlV76PPRM+g`, GitHub key id
+160379533, verified) registered after `gh auth refresh -s admin:public_key`;
+`ssh -T git@github.com` authenticated successfully and an SSH fetch updated
+`main` from `f7071df0` to `d5bbd7f4`.
+
 ## Layout
 
 ```text

@@ -58,6 +58,27 @@ const samples = [];
 let createdCount = 0;
 let errorCount = 0;
 
+// B-3.3：soak 期间记录内存/句柄增长趋势。首个成功请求后取基线，
+// 此后每 V2_SOAK_SAMPLE_MS 采样一次；结束后对比首末样本，任一指标
+// 增长超过上限即判失败（长时间运行的内存泄漏/句柄泄漏看门狗）。
+const growthSamples = [];
+const growthSampleIntervalMs = Math.max(1000, Math.min(60_000, Number(process.env.V2_SOAK_SAMPLE_MS ?? 30_000)));
+const maxHeapGrowthBytes = Math.max(1, Number(process.env.V2_SOAK_MAX_HEAP_GROWTH_BYTES ?? 64 * 1024 * 1024));
+const maxRssGrowthBytes = Math.max(1, Number(process.env.V2_SOAK_MAX_RSS_GROWTH_BYTES ?? 128 * 1024 * 1024));
+const maxResourceGrowth = Math.max(1, Number(process.env.V2_SOAK_MAX_RESOURCE_GROWTH ?? 20));
+let nextGrowthSampleAt = 0;
+
+function sampleGrowth() {
+  const memory = process.memoryUsage();
+  growthSamples.push({
+    sampledAt: new Date().toISOString(),
+    rssBytes: memory.rss,
+    heapUsedBytes: memory.heapUsed,
+    externalBytes: memory.external,
+    activeResources: process.getActiveResourcesInfo().length,
+  });
+}
+
 try {
   spawnApi();
   await waitForApi();
@@ -86,6 +107,7 @@ try {
       createdCount += 1;
       sequence += 1;
       samples.push({ operation: 'create', durationMs: create.durationMs });
+      if (growthSamples.length === 0) sampleGrowth();
 
       const dashboard = await request('/stats/dashboard', {}, token);
       samples.push({ operation: 'dashboard', durationMs: dashboard.durationMs });
@@ -102,6 +124,10 @@ try {
     const elapsed = Date.now() - iterationStart;
     const waitMs = Math.max(0, Math.round(1000 / targetRequestsPerSecond) - elapsed);
     if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
+    if (Date.now() >= nextGrowthSampleAt) {
+      sampleGrowth();
+      nextGrowthSampleAt = Date.now() + growthSampleIntervalMs;
+    }
   }
 
   await stopApi();
@@ -129,6 +155,23 @@ try {
   if (p95(dashboardSamples) > p95LimitMs || p95(createSamples) > p95LimitMs) {
     throw new Error(`soak p95 exceeded ${p95LimitMs}ms (create=${p95(createSamples).toFixed(1)}, dashboard=${p95(dashboardSamples).toFixed(1)})`);
   }
+
+  // B-3.3：对比首末增长样本。首样本在第一次成功请求后采集，排除启动期
+  // 一次性分配；末样本在结束前采集。任一指标超限即把 soak 判失败。
+  const firstGrowth = growthSamples[0];
+  const lastGrowth = growthSamples[growthSamples.length - 1];
+  const heapGrowthBytes = lastGrowth.heapUsedBytes - firstGrowth.heapUsedBytes;
+  const rssGrowthBytes = lastGrowth.rssBytes - firstGrowth.rssBytes;
+  const resourceGrowth = lastGrowth.activeResources - firstGrowth.activeResources;
+  if (heapGrowthBytes > maxHeapGrowthBytes) {
+    throw new Error(`heap grew ${heapGrowthBytes} bytes during soak (limit ${maxHeapGrowthBytes})`);
+  }
+  if (rssGrowthBytes > maxRssGrowthBytes) {
+    throw new Error(`rss grew ${rssGrowthBytes} bytes during soak (limit ${maxRssGrowthBytes})`);
+  }
+  if (resourceGrowth > maxResourceGrowth) {
+    throw new Error(`active resources grew by ${resourceGrowth} during soak (limit ${maxResourceGrowth})`);
+  }
   console.log('soak smoke passed', {
     durationSeconds,
     created: createdCount,
@@ -140,6 +183,12 @@ try {
     logFiles,
     uptimeSeconds: stability.uptimeSeconds,
     integrity,
+    growth: {
+      samples: growthSamples.length,
+      heapGrowthBytes,
+      rssGrowthBytes,
+      activeResourceGrowth: resourceGrowth,
+    },
   });
 } finally {
   await stopApi();

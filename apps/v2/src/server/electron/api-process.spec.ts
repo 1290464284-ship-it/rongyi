@@ -13,6 +13,7 @@ interface ApiEnvModule {
     secretFilePath: string;
     apiPort: number;
     isPackaged: boolean;
+    appVersion?: string;
   }): Record<string, string | undefined>;
 }
 
@@ -118,6 +119,7 @@ describe('electron api process', () => {
         secretFilePath: 'C:\\tmp\\secrets.json',
         apiPort: 3180,
         isPackaged: true,
+        appVersion: '2.2.0',
       });
       expect(env.V2_DB_PATH).toBeUndefined();
       expect(env.V2_JWT_SECRET).toBeUndefined();
@@ -130,6 +132,7 @@ describe('electron api process', () => {
       expect(env.V2_WECHAT_APP_SECRET).toBeUndefined();
       expect(env.V2_WECHAT_APP_ID).toBeUndefined();
       expect(env.V2_ADMIN_PASSWORD).toBeUndefined();
+      expect(env.V2_APP_VERSION).toBe('2.2.0');
       expect(env.V2_HOST).toBe('127.0.0.1');
       expect(env.V2_DATA_DIR).toBe(path.join('C:\\user-data', 'data'));
       expect(env.V2_PORT).toBe('3180');

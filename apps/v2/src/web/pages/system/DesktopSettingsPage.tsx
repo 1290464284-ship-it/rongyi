@@ -26,6 +26,7 @@ export function DesktopSettingsPage() {
   const [updatePercent, setUpdatePercent] = useState<number | null>(null);
   const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
   const [apiStatus, setApiStatus] = useState('');
+  const [lastCheckTime, setLastCheckTime] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const busyActionRef = useRef<string | null>(null);
 
@@ -56,7 +57,8 @@ export function DesktopSettingsPage() {
         }
         else if (type === 'available') {
           setUpdateAvailable(String(event.version ?? ''));
-          setUpdateStatus(`发现新版本 ${String(event.version ?? '')}，点击"下载更新"按钮开始下载`);
+          // A-P1.1: autoDownload=true，发现新版后主进程自动开始下载。
+          setUpdateStatus(`发现新版本 ${String(event.version ?? '')}，正在自动下载…`);
           setUpdatePercent(null);
         }
         else if (type === 'downloaded') {
@@ -76,6 +78,7 @@ export function DesktopSettingsPage() {
         }
         else if (type === 'checking') {
           setUpdateStatus('正在检查更新');
+          setLastCheckTime(new Date().toLocaleString());
           setUpdatePercent(null);
         }
       }));
@@ -119,6 +122,7 @@ export function DesktopSettingsPage() {
   }
 
   async function checkUpdates() {
+    setLastCheckTime(new Date().toLocaleString());
     try {
       const result = await bridge.checkUpdates();
       if (result.status === 'error') {
@@ -131,7 +135,8 @@ export function DesktopSettingsPage() {
       } else {
         if (result.status === 'available') setUpdateAvailable(result.version ?? '');
         else setUpdateAvailable(null);
-        setUpdateStatus(result.status === 'available' ? `发现新版本 ${result.version}，点击"下载更新"按钮开始下载` : result.status === 'none' ? '当前已是最新版本' : result.message ?? '检查失败');
+        // A-P1.1: autoDownload=true，发现新版后主进程自动开始下载。
+        setUpdateStatus(result.status === 'available' ? `发现新版本 ${result.version}，正在自动下载…` : result.status === 'none' ? '当前已是最新版本' : result.message ?? '检查失败');
       }
     } catch (error) {
       showToast(errorMessage(error, '检查失败'), 'error');
@@ -178,6 +183,7 @@ export function DesktopSettingsPage() {
         <div className="card"><strong>API 端口</strong><span>{apiPort ?? '未知'}</span></div>
         <div className="card"><strong>开机自启</strong><span>{autoLaunch === null ? '未知' : autoLaunch ? '已开启' : '已关闭'}</span></div>
         <div className="card"><strong>本地服务</strong><span>{apiStatus || '正常'}</span></div>
+      <div className="card"><strong>上次检查更新</strong><span>{lastCheckTime ?? '尚未检查'}</span></div>
       </div>
       <div className="inline-form">
         <button disabled={busyAction !== null} onClick={() => void runAction('autolaunch', toggleAutoLaunch)}>{busyAction === 'autolaunch' ? '切换中...' : '切换开机自启'}</button>

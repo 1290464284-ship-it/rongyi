@@ -352,7 +352,9 @@ describe('AuthService login TOCTOU guard', () => {
     await expect(stale.refresh('token-claim')).resolves.toBeDefined();
   });
 
-  it('clears the refresh cache when it exceeds capacity', async () => {
+  // A-P0.1：1001 次 refresh 的容量测试在 windows-latest 发布 runner 上
+  // 曾超过全局 40s（Defender/资源争抢），单测放宽到 90s；真挂起仍会失败。
+  it('clears the refresh cache when it exceeds capacity', { timeout: 90_000 }, async () => {
     const hash = bcrypt.hashSync('pass', 4);
     const user = {
       ...record(hash, now),

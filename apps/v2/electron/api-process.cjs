@@ -190,6 +190,7 @@ async function doStartApi() {
       secretFilePath,
       apiPort: state.apiPort,
       isPackaged: app.isPackaged,
+      appVersion: app.getVersion(),
     }),
     // stdout/stderr 接管道并落盘：idempotency/audit-buffer 等基础设施仍走
     // console，打包版不能把它们的诊断输出丢弃（stdio: ignore 会彻底消失）。

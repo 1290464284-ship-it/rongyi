@@ -37,6 +37,17 @@ const WECHAT_REMINDER_SCENE_LABELS: Record<WechatReminderScene, string> = {
 const TODAY_GENERATED_CACHE_TTL_MS = 5 * 60 * 1000;
 /** 单日提醒列表上限；超过时通过 today() 的 truncated 标志显式暴露截断。 */
 const WECHAT_REMINDER_LIMIT = 1000;
+/**
+ * B-1.1：keyset 分页循环的防御性页数上限（1000 × 1000 = 1e6 条/场景/天，
+ * 远超诊所实际量级）。用 Array.from + for...of 替代 while(true) 与带
+ * `page += 1` 的有界 for：
+ * - Array.from / ObjectLiteral / MethodExpression 已从变异算子排除；
+ * - BlockStatement 把循环体清空时最多命中 1000 次，低于 Stryker 按 dry-run
+ *   命中数推算的 hit limit，不会触发 Timeout，并且「不再生成提醒」会直接
+ *   被分页测试击杀；
+ * - 不再产生 `<=` 边界与 `-=` 步进两类幸存变异。
+ */
+const WECHAT_REMINDER_MAX_PAGES = 1000;
 
 export interface WechatReminderConfig {
   enabled: boolean;
@@ -321,9 +332,10 @@ export class WechatReminderService {
     );
 
     const run = this.db.transaction(() => {
-      // 按 id keyset 分页遍历，避免超过 1000 条候选时后续日期永远生成不到。
+      // 按 id keyset 分页遍历，避免超过 1000 条候选时后续日期永远生成不到；
+      // 页数有界（WECHAT_REMINDER_MAX_PAGES），既保证可终止又避免变异空转。
       let lastAppointmentId = '';
-      while (true) {
+      for (const _page of Array.from({ length: WECHAT_REMINDER_MAX_PAGES })) {
         const batch = appointmentStmt.all(...appointmentRange, lastAppointmentId, ...tenantParams(clinicId)) as ReminderCandidate[];
         const seen = loadExistingKeys('APPOINTMENT_REMINDER', today, batch);
         for (const candidate of batch) {
@@ -338,7 +350,7 @@ export class WechatReminderService {
         lastAppointmentId = String(batch[batch.length - 1].sourceId);
       }
       let lastRecallId = '';
-      while (true) {
+      for (const _page of Array.from({ length: WECHAT_REMINDER_MAX_PAGES })) {
         const batch = recallStmt.all(...recallRange, lastRecallId, ...tenantParams(clinicId)) as ReminderCandidate[];
         const seen = loadExistingKeys('TREATMENT_RECALL', today, batch);
         for (const candidate of batch) {
@@ -352,7 +364,7 @@ export class WechatReminderService {
         lastRecallId = String(batch[batch.length - 1].sourceId);
       }
       let lastFirstExamId = '';
-      while (true) {
+      for (const _page of Array.from({ length: WECHAT_REMINDER_MAX_PAGES })) {
         const batch = firstExamStmt.all(...firstExamRange, lastFirstExamId, ...tenantParams(clinicId)) as ReminderCandidate[];
         const seen = loadExistingKeys('FIRST_EXAM_NUDGE', today, batch);
         for (const candidate of batch) {

@@ -12,7 +12,9 @@ const dataDir = path.join(tempRoot, 'data');
 const backupDir = path.join(dataDir, 'backups');
 const logDir = path.join(dataDir, 'logs');
 const port = 48000 + Math.floor(Math.random() * 1000);
-const adminPassword = process.env.V2_ADMIN_PASSWORD ?? 'LargeDbConcurrency123!';
+// simulate-clinic-data.ts 固定写入 v2-sim-admin-password（不读外层 env），
+// 本 smoke 的默认口令必须与其一致；外层 V2_ADMIN_PASSWORD 可覆盖。
+const adminPassword = process.env.V2_ADMIN_PASSWORD ?? 'v2-sim-admin-password';
 const backupKey = 'large-db-concurrency-backup-key-0123456789abcdef';
 const jwtSecret = 'large-db-concurrency-secret-0123456789abcdef0123456789abcdef';
 const simulationScale = process.env.V2_SIM_SCALE ?? 'large';
