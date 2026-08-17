@@ -75,28 +75,33 @@ describe('AuthService', () => {
   }
 
   it('rotates refresh tokens and rejects reused tokens', async () => {
-    const service = new AuthService(db);
-    const session = await service.login('admin', 'v2-test-seed-password');
-    expect(session.refreshToken).toBeDefined();
-    const refreshed = await service.refresh(session.refreshToken);
-    expect(refreshed.refreshToken).not.toBe(session.refreshToken);
-    // B-M9：轮换成功后旧 token 进入 5 秒窗口缓存（并发刷新共享同一新会话），
-    // 窗口内重复 refresh 返回同一会话；窗口过后重放才触发 RFC 6819 吊销。
-    const replayed = await service.refresh(session.refreshToken);
-    expect(replayed.refreshToken).toBe(refreshed.refreshToken);
-    await new Promise((resolve) => setTimeout(resolve, 5100));
-    const versionBeforeReplay = (db.prepare("SELECT tokenVersion FROM User WHERE username = 'admin'").get() as { tokenVersion: number }).tokenVersion;
-    await expect(service.refresh(session.refreshToken)).rejects.toThrow('Invalid refresh token');
-    // M5：重用检测后按 RFC 6819 吊销整个会话族——轮换出的 refresh token 也失效，且当前 refresh token 被清除、tokenVersion 递增
-    await expect(service.refresh(refreshed.refreshToken)).rejects.toThrow('Invalid refresh token');
-    const afterReplay = db.prepare("SELECT refreshToken, tokenVersion FROM User WHERE username = 'admin'").get() as {
-      refreshToken: string | null;
-      tokenVersion: number;
-    };
-    expect(afterReplay.refreshToken).toBeNull();
-    expect(afterReplay.tokenVersion).toBe(versionBeforeReplay + 1);
-    await service.logout(refreshed.refreshToken);
-    await expect(service.refresh(refreshed.refreshToken)).rejects.toThrow('Invalid refresh token');
+    vi.useFakeTimers();
+    try {
+      const service = new AuthService(db);
+      const session = await service.login('admin', 'v2-test-seed-password');
+      expect(session.refreshToken).toBeDefined();
+      const refreshed = await service.refresh(session.refreshToken);
+      expect(refreshed.refreshToken).not.toBe(session.refreshToken);
+      // B-M9：轮换成功后旧 token 进入 5 秒窗口缓存（并发刷新共享同一新会话），
+      // 窗口内重复 refresh 返回同一会话；窗口过后重放才触发 RFC 6819 吊销。
+      const replayed = await service.refresh(session.refreshToken);
+      expect(replayed.refreshToken).toBe(refreshed.refreshToken);
+      await vi.advanceTimersByTimeAsync(5100);
+      const versionBeforeReplay = (db.prepare("SELECT tokenVersion FROM User WHERE username = 'admin'").get() as { tokenVersion: number }).tokenVersion;
+      await expect(service.refresh(session.refreshToken)).rejects.toThrow('Invalid refresh token');
+      // M5：重用检测后按 RFC 6819 吊销整个会话族——轮换出的 refresh token 也失效，且当前 refresh token 被清除、tokenVersion 递增
+      await expect(service.refresh(refreshed.refreshToken)).rejects.toThrow('Invalid refresh token');
+      const afterReplay = db.prepare("SELECT refreshToken, tokenVersion FROM User WHERE username = 'admin'").get() as {
+        refreshToken: string | null;
+        tokenVersion: number;
+      };
+      expect(afterReplay.refreshToken).toBeNull();
+      expect(afterReplay.tokenVersion).toBe(versionBeforeReplay + 1);
+      await service.logout(refreshed.refreshToken);
+      await expect(service.refresh(refreshed.refreshToken)).rejects.toThrow('Invalid refresh token');
+    } finally {
+      vi.useRealTimers();
+    }
   }, 15000);
 
   it('shares the refresh rotation window across service instances via the DB claim', async () => {

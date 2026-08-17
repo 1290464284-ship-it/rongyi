@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest, uploadFile } from '../../lib/api';
 import { CrudPage } from '../../components/CrudPage';
+import { LoadingState } from '../../components';
 import { errorMessage } from '../../lib/messages';
 import { useToast } from '../../lib/toast-context';
 import { cephalometricColumns } from '../../cephalometric/columns';
@@ -27,7 +28,10 @@ export function CephalometricPage() {
   const [comparePage, setComparePage] = useState(1);
 
   const compareOptionsQuery = useQuery({
-    queryKey: ['cephalometric-options', compareSearch, comparePage],
+    // B5：初始态（无搜索、第 1 页）与 CrudPage 列表同 URL，复用其 queryKey 共享缓存，消除同端点双请求
+    queryKey: compareSearch === '' && comparePage === 1
+      ? ['cephalometric', 1, '']
+      : ['cephalometric-options', compareSearch, comparePage],
     queryFn: () => apiRequest<Page<CephalometricRow>>(
       `/resources/cephalometricCases?page=${comparePage}&pageSize=50${compareSearch ? `&search=${encodeURIComponent(compareSearch)}` : ''}`,
     ),
@@ -79,6 +83,7 @@ export function CephalometricPage() {
         emptyMessage="暂无头影测量"
         queryKey={['cephalometric']}
         endpoint="/resources/cephalometricCases"
+        paged
         initialForm={() => {
           editingIdRef.current = null;
           return { ...emptyForm };
@@ -171,13 +176,11 @@ export function CephalometricPage() {
         canDelete
         rowActions={(row, ctx) => {
           const openReport = () => {
-            /* v8 ignore next -- 本页列表无分页/搜索（queryKey 恒定），stale 恒为 false，守卫为防御冗余 */
             if (ctx.stale) return;
             setSendTarget(null);
             setReportTarget(row);
           };
           const openSend = () => {
-            /* v8 ignore next -- 同上 */
             if (ctx.stale) return;
             setReportTarget(null);
             setSendTarget(row);
@@ -221,7 +224,14 @@ export function CephalometricPage() {
             </div>
           )}
         </div>
-        {compareOptions.length === 0 ? (
+        {compareOptionsQuery.isLoading ? (
+          <LoadingState label="对比选项加载中..." />
+        ) : compareOptionsQuery.error ? (
+          <div className="query-section-error">
+            <p className="error">对比选项加载失败</p>
+            <button type="button" className="btn-secondary" onClick={() => void compareOptionsQuery.refetch()}>重试</button>
+          </div>
+        ) : compareOptions.length === 0 ? (
           <p>暂无测量病例可选</p>
         ) : (
           <>

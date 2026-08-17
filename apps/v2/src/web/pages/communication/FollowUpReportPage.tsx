@@ -1,3 +1,4 @@
+import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest, downloadCsv } from '../../lib/api';
 import { QueryBoundary } from '../../components';
@@ -12,17 +13,26 @@ interface FollowUpAdherence {
 
 export function FollowUpReportPage() {
   const { showToast } = useToast();
+  const [exporting, setExporting] = useState(false);
+  const exportingRef = useRef(false);
   const query = useQuery({
     queryKey: ['followup-report'],
     queryFn: () => apiRequest<FollowUpAdherence>('/follow-ups/adherence'),
   });
   const data = query.data ?? { total: 0, onTime: 0, rate: 0 };
   async function exportFollowUps() {
+    /* v8 ignore next -- 导出按钮在 exporting 期间 disabled，双击不可达 */
+    if (exportingRef.current) return;
+    exportingRef.current = true;
+    setExporting(true);
     try {
       await downloadCsv('followUps');
       showToast('随访明细已导出', 'success');
     } catch (error) {
       showToast(friendlyError(error), 'error');
+    } finally {
+      exportingRef.current = false;
+      setExporting(false);
     }
   }
   return (
@@ -30,7 +40,7 @@ export function FollowUpReportPage() {
       <div className="page">
         <div className="page-head">
           <h1>随访到诊率</h1>
-          <button onClick={() => void exportFollowUps()}>导出随访明细</button>
+          <button disabled={exporting} onClick={() => void exportFollowUps()}>{exporting ? '导出中...' : '导出随访明细'}</button>
         </div>
         <div className="board-summary">
           <div className="summary-item"><span>随访总数</span><strong>{data.total}</strong></div>

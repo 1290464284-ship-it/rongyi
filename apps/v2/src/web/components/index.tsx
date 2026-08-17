@@ -4,6 +4,7 @@
 // - status.tsx             页面状态（错误/加载/空态/边界）
 // - dialog.tsx             弹窗（Dialog/ConfirmDialog/PromptDialog）
 export * from './searchable-select';
+export * from './DoctorSelect';
 export * from './data-table';
 export * from './status';
 export * from './dialog';

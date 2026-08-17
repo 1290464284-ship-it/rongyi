@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pickFreePort } from './lib/smoke-runtime.mjs';
 
 const appRoot = path.resolve(import.meta.dirname, '..');
 const serverScript = path.join(appRoot, 'dist-electron', 'server.cjs');
@@ -20,6 +21,10 @@ if (!fs.existsSync(serverScript)) {
   process.exit(1);
 }
 
+// 本 smoke 是「双实例 + 共享 SQLite」场景：baseEnv/waitForApi/request/startServer
+// 全部按 port 参数化，且每个进程需要独立的 stderr 缓冲（stderrBuffers），与单实例
+// createDrill 的签名不匹配，故保留本地进程管理，仅复用 lib/smoke-runtime.mjs 的
+// pickFreePort。
 const processes = [];
 const stderrBuffers = new Map();
 
@@ -278,8 +283,10 @@ async function verifyConcurrentSyncPushAndIdempotent(portA, portB, tokenA, token
 }
 
 async function main() {
-  const portA = 35000 + Math.floor(Math.random() * 1000);
-  const portB = portA + 1;
+  // 两个实例必须使用不同端口；分别探测空闲端口（相邻端口易撞）。
+  const portA = await pickFreePort(35000, 35999);
+  let portB = await pickFreePort(35000, 35999);
+  while (portB === portA) portB = await pickFreePort(35000, 35999);
   try {
     await Promise.all([startServer(portA), startServer(portB)]);
     const tokenA = await login(portA);

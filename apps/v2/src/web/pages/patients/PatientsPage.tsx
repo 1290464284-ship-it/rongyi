@@ -2,118 +2,12 @@ import { useRef } from 'react';
 import { useSearchParams } from 'react-router';
 import { apiRequest } from '../../lib/api';
 import { CrudPage } from '../../components/CrudPage';
-import type { DataTableColumn } from '../../components';
 import { errorMessage } from '../../lib/messages';
 import type { Page } from '../../lib/types';
-
-const GENDER_LABELS: Record<string, string> = {
-  MALE: '男',
-  FEMALE: '女',
-  UNKNOWN: '未知',
-};
-
-const SOURCE_LABELS: Record<string, string> = {
-  WALK_IN: '到店',
-  REFERRAL: '转介绍',
-  ONLINE: '线上',
-  OTHER: '其他',
-};
-
-const PREFERRED_CONTACT_LABELS: Record<string, string> = {
-  PHONE: '电话',
-  WECHAT: '微信',
-  SMS: '短信',
-  OTHER: '其他',
-};
-
-type PatientRow = Record<string, unknown> & {
-  id: string;
-  code?: string;
-  name?: string;
-  gender?: string;
-  phone?: string;
-  wechatId?: string;
-  preferredContact?: string;
-  contactNote?: string;
-  birthDate?: string;
-  source?: string;
-  active?: boolean;
-};
-
-interface PatientForm {
-  code: string;
-  name: string;
-  gender: string;
-  phone: string;
-  wechatId: string;
-  preferredContact: string;
-  contactNote: string;
-  birthDate: string;
-  idCard: string;
-  address: string;
-  occupation: string;
-  source: string;
-  active: boolean;
-  avatar: string;
-  allergies: string;
-  medicalHistory: string;
-  medicationHistory: string;
-  systemicDiseases: string;
-  tags: string;
-  remark: string;
-}
-
-const emptyForm: PatientForm = {
-  code: '',
-  name: '',
-  gender: 'UNKNOWN',
-  phone: '',
-  wechatId: '',
-  preferredContact: 'PHONE',
-  contactNote: '',
-  birthDate: '',
-  idCard: '',
-  address: '',
-  occupation: '',
-  source: 'WALK_IN',
-  active: true,
-  avatar: '',
-  allergies: '',
-  medicalHistory: '',
-  medicationHistory: '',
-  systemicDiseases: '',
-  tags: '',
-  remark: '',
-};
-
-const patientColumns: DataTableColumn<PatientRow>[] = [
-  { key: 'code', label: '编号' },
-  { key: 'name', label: '姓名' },
-  {
-    key: 'gender',
-    label: '性别',
-    render: (row) => GENDER_LABELS[String(row.gender ?? '')] ?? String(row.gender ?? ''),
-  },
-  { key: 'phone', label: '电话' },
-  { key: 'wechatId', label: '微信号' },
-  {
-    key: 'preferredContact',
-    label: '首选联系',
-    // 兜底仅在 preferredContact 为非空未知值时求值（空值时 `?? 'PHONE'` 恒命中标签表 PHONE），故兜底不再 `?? 'PHONE'`。
-    render: (row) => PREFERRED_CONTACT_LABELS[String(row.preferredContact ?? 'PHONE')] ?? String(row.preferredContact),
-  },
-  { key: 'birthDate', label: '出生日期' },
-  {
-    key: 'source',
-    label: '来源',
-    render: (row) => SOURCE_LABELS[String(row.source ?? '')] ?? String(row.source ?? ''),
-  },
-  {
-    key: 'active',
-    label: '启用',
-    render: (row) => row.active ? '是' : '否',
-  },
-];
+import { patientColumns } from './patients-columns';
+import { PatientFormFields } from './PatientFormFields';
+import { joinLines, splitLines } from './patients-format';
+import { emptyForm, type PatientForm, type PatientRow } from './patients-types';
 
 export function PatientsPage() {
   const editingIdRef = useRef<string | null>(null);
@@ -180,7 +74,17 @@ export function PatientsPage() {
         tags: splitLines(form.tags),
         remark: form.remark || undefined,
       })}
+      onEditLoad={async (row) => {
+        // 列表返回的 idCard 已按数据最小化掩码（保留尾号），编辑时从详情接口取完整值回填，
+        // 避免把掩码写回库。
+        const detail = await apiRequest<PatientRow>(`/resources/patients/${String(row.id)}`);
+        return { idCard: String(detail.idCard ?? '') };
+      }}
       onBeforeSubmit={async (form) => {
+        // 兜底：详情加载失败/被跳过时掩码值会留在表单，提交前拦截防止掩码落库。
+        if (String(form.idCard ?? '').includes('*')) {
+          return '身份证号未完整加载，请关闭编辑框后重新打开编辑';
+        }
         if (!form.phone && !form.code) return null;
         try {
           const duplicateCheck = await apiRequest<Page<PatientRow>>(
@@ -208,119 +112,9 @@ export function PatientsPage() {
       dialogTitle={(editing) => (editing ? '编辑患者' : '新建患者')}
       deleteTitle="删除患者"
       deleteMessage="确定删除该患者档案吗？"
-      renderForm={(ctx) => {
-        const form = ctx.form;
-        const update = ctx.update;
-        return (
-          <>
-            <label>
-              患者编号
-              <input value={form.code} onChange={(event) => update({ code: event.target.value })} />
-            </label>
-            <label>
-              姓名
-              <input value={form.name} onChange={(event) => update({ name: event.target.value })} />
-            </label>
-            <label>
-              性别
-              <select value={form.gender} onChange={(event) => update({ gender: event.target.value })}>
-                {Object.entries(GENDER_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>{label}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              手机号
-              <input value={form.phone} onChange={(event) => update({ phone: event.target.value })} />
-            </label>
-            <label>
-              微信号
-              <input value={form.wechatId} onChange={(event) => update({ wechatId: event.target.value })} />
-            </label>
-            <label>
-              首选联系方式
-              <select value={form.preferredContact} onChange={(event) => update({ preferredContact: event.target.value })}>
-                {Object.entries(PREFERRED_CONTACT_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>{label}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              联系方式备注
-              <textarea value={form.contactNote} onChange={(event) => update({ contactNote: event.target.value })} />
-            </label>
-            <label>
-              出生日期
-              <input type="date" value={form.birthDate} onChange={(event) => update({ birthDate: event.target.value })} />
-            </label>
-            <label>
-              身份证号
-              <input value={form.idCard} onChange={(event) => update({ idCard: event.target.value })} />
-            </label>
-            <label>
-              地址
-              <input value={form.address} onChange={(event) => update({ address: event.target.value })} />
-            </label>
-            <label>
-              职业
-              <input value={form.occupation} onChange={(event) => update({ occupation: event.target.value })} />
-            </label>
-            <label>
-              来源
-              <select value={form.source} onChange={(event) => update({ source: event.target.value })}>
-                {Object.entries(SOURCE_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>{label}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              头像地址
-              <input value={form.avatar} onChange={(event) => update({ avatar: event.target.value })} />
-            </label>
-            <label>
-              过敏史（每行一条）
-              <textarea value={form.allergies} onChange={(event) => update({ allergies: event.target.value })} />
-            </label>
-            <label>
-              既往病史（每行一条）
-              <textarea value={form.medicalHistory} onChange={(event) => update({ medicalHistory: event.target.value })} />
-            </label>
-            <label>
-              用药史（每行一条）
-              <textarea value={form.medicationHistory} onChange={(event) => update({ medicationHistory: event.target.value })} />
-            </label>
-            <label>
-              全身疾病（每行一条）
-              <textarea value={form.systemicDiseases} onChange={(event) => update({ systemicDiseases: event.target.value })} />
-            </label>
-            <label>
-              标签（每行一条）
-              <textarea value={form.tags} onChange={(event) => update({ tags: event.target.value })} />
-            </label>
-            <label>
-              备注
-              <textarea value={form.remark} onChange={(event) => update({ remark: event.target.value })} />
-            </label>
-            <label>
-              <input type="checkbox" checked={form.active} onChange={(event) => update({ active: event.target.checked })} />
-              启用档案
-            </label>
-          </>
-        );
-      }}
+      renderForm={(ctx) => (
+        <PatientFormFields form={ctx.form} update={ctx.update} />
+      )}
     />
   );
-}
-
-function splitLines(value: string): string[] {
-  return value
-    .split(/[\n,，]+/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function joinLines(value: unknown): string {
-  if (Array.isArray(value)) return value.join('\n');
-  if (value === null || value === undefined) return '';
-  return String(value);
 }

@@ -1,8 +1,9 @@
-import { useRef, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { apiRequest } from '../../lib/api';
 import { Dialog } from '../../components';
 import { toCents } from '../../lib/format';
 import { errorMessage } from '../../lib/messages';
+import { useAsyncAction } from '../../hooks/use-async-action';
 import type { ToastKind } from '../../lib/toast-context';
 
 interface MemberCardPlanDialogProps {
@@ -21,12 +22,11 @@ export function MemberCardPlanDialog({ open, cardId, onSaved, onClose, showToast
     annualDiscountLimit: '',
     specialDiscountsJson: '',
   });
-  const [planBusy, setPlanBusy] = useState(false);
-  const planBusyRef = useRef(false);
+  const { busy: planBusy, run: runPlanSave } = useAsyncAction();
 
   async function savePlan(event: FormEvent) {
     event.preventDefault();
-    if (!cardId || planBusy || planBusyRef.current) return;
+    if (!cardId || planBusy) return;
     let specialDiscountsJson: unknown = null;
     const rawJson = planForm.specialDiscountsJson.trim();
     if (rawJson) {
@@ -37,28 +37,26 @@ export function MemberCardPlanDialog({ open, cardId, onSaved, onClose, showToast
         return;
       }
     }
-    setPlanBusy(true);
-    planBusyRef.current = true;
-    try {
-      await apiRequest(`/member-cards/${cardId}/discount-plan`, {
-        method: 'PUT',
-        body: JSON.stringify({
-          discountRate: planForm.discountRate === '' ? null : Number(planForm.discountRate),
-          maxDiscountAmount: planForm.maxDiscountAmount === '' ? null : toCents(planForm.maxDiscountAmount),
-          roundingMode: planForm.roundingMode,
-          annualDiscountLimit: planForm.annualDiscountLimit === '' ? null : toCents(planForm.annualDiscountLimit),
-          specialDiscountsJson,
-        }),
-      });
-      showToast('折扣方案已保存', 'success');
-      onClose();
-      onSaved();
-    } catch (error) {
-      showToast(errorMessage(error, '保存折扣方案失败'), 'error');
-    } finally {
-      planBusyRef.current = false;
-      setPlanBusy(false);
-    }
+    const targetCardId = cardId;
+    await runPlanSave(async () => {
+      try {
+        await apiRequest(`/member-cards/${targetCardId}/discount-plan`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            discountRate: planForm.discountRate === '' ? null : Number(planForm.discountRate),
+            maxDiscountAmount: planForm.maxDiscountAmount === '' ? null : toCents(planForm.maxDiscountAmount),
+            roundingMode: planForm.roundingMode,
+            annualDiscountLimit: planForm.annualDiscountLimit === '' ? null : toCents(planForm.annualDiscountLimit),
+            specialDiscountsJson,
+          }),
+        });
+        showToast('折扣方案已保存', 'success');
+        onClose();
+        onSaved();
+      } catch (error) {
+        showToast(errorMessage(error, '保存折扣方案失败'), 'error');
+      }
+    });
   }
 
   return (

@@ -47,7 +47,8 @@ $required = @(
   $appExe,
   (Join-Path $installDir "resources\app.asar"),
   (Join-Path $installDir "resources\legacy\dental.sqlite"),
-  (Join-Path $installDir "resources\legacy\schema\system.tables.ts")
+  # E-5 裁剪（2026-08-17）：打包内仅携带 generated.sql（运行时首选），不再打包 .tables.ts
+  (Join-Path $installDir "resources\legacy\schema\legacy-schema.generated.sql")
 )
 foreach ($file in $required) {
   if (-not (Test-Path -LiteralPath $file)) {

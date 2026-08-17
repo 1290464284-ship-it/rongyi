@@ -2,15 +2,17 @@ import { FormEvent, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'react-router';
 import { apiRequest, downloadCsv } from '../lib/api';
-import type { Page, ResourceDefinition, ResourceField } from '../lib/types';
-import { ConfirmDialog, DataTable, Dialog, EmptyState, LoadingState, PageError, PagePager, SearchInput } from '.';
-import { formatDisplayValue, formatDate, formatDateTime, formatMoney, centsToYuanString, toCents, toLocalInput } from '../lib/format';
-import { FormBuilder } from './FormBuilder';
+import type { Page, ResourceDefinition } from '../lib/types';
+import { DataTable, EmptyState, LoadingState, PageError, PagePager, SearchInput } from '.';
+import { formatDisplayValue } from '../lib/format';
 import { friendlyError } from '../lib/messages';
 import { useDebouncedValue } from '../hooks/use-debounce';
 import { useToast } from '../lib/toast-context';
-import { SIMPLE_LIST_COLUMN_LABELS } from '../lib/labels';
-import { csvCell, downloadTextFile } from '../pages/analytics/analytics-utils';
+import { PROTECTED_UI_FIELDS, TABLE_COLUMN_LIMIT } from './resource-page-constants';
+import { buildInitialForm, buildPayload, formFromRow } from './resource-page-utils';
+import { ReadOnlyListPage, type StatColumnType } from './resource-page-readonly';
+import { resourceTableColumns } from './resource-page-columns';
+import { ResourceFormDialog, DeleteConfirmDialog, BatchDeleteConfirmDialog } from './resource-page-dialogs';
 
 /**
  * 元数据驱动的通用资源 CRUD 页（Round7 M-02 职责说明）。
@@ -25,112 +27,17 @@ import { csvCell, downloadTextFile } from '../pages/analytics/analytics-utils';
  * 三者均经 useDebouncedValue（hooks/use-debounce）统一防抖，勿手写 setTimeout。
  */
 
-const PROTECTED_UI_FIELDS = new Set([
-  'passwordHash',
-  'refreshToken',
-  'tokenHash',
-  'role',
-  'loginAttempts',
-  'lockedUntil',
-  'tokenVersion',
-  'balance',
-  'totalRecharge',
-  'totalConsume',
-  'points',
-  'totalPoints',
-  'stock',
-  'minStock',
-  'paidAmount',
-  'refundedAmount',
-]);
+export type { StatColumnType } from './resource-page-readonly';
 
-const TABLE_COLUMN_LIMIT = 10;
-
-function fieldValue(field: ResourceField, value: unknown): unknown {
-  if (field.type === 'json') {
-    /* v8 ignore next -- FormBuilder json 控件始终以字符串提交，非字符串/空值分支不可达 */
-    if (typeof value !== 'string') return JSON.stringify(value ?? '{}');
-    return value;
-  }
-  if (field.type === 'boolean') return Boolean(value);
-  if (field.type === 'datetime' && typeof value === 'string' && value) {
-    const parsed = new Date(value);
-    /* v8 ignore next -- datetime-local 输入已被浏览器清洗，非法非空字符串不可达 */
-    return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString();
-  }
-  if (field.type === 'money') return toCents(value);
-  if (field.type === 'number') {
-    /* v8 ignore next -- 数字控件始终提交字符串，?? 0 仅作防御 */
-    return Number(value ?? 0);
-  }
-  /* v8 ignore next -- submit 会跳过可选空值，必填值恒为字符串，?? '' 分支不可达 */
-  return value ?? '';
-}
-
-function fieldToForm(field: ResourceField, value: unknown): string | boolean {
-  if (field.type === 'boolean') return Boolean(value);
-  if (field.type === 'json') return JSON.stringify(value ?? '', null, 2);
-  if (value === null || value === undefined) return '';
-  if (field.type === 'datetime' && typeof value === 'string' && value) return toLocalInput(value);
-  if (field.type === 'money' && Number.isFinite(Number(value))) return centsToYuanString(value);
-  return String(value);
-}
-
-function formatStatValue(column: string, value: unknown): string {
-  if (value === null || value === undefined) return '';
-  if (typeof value === 'object') return JSON.stringify(value);
-  if (['revenue', 'amount', 'totalAmount', 'paidAmount', 'unpaidAmount', 'monetary', 'price', 'unitPrice', 'subtotal'].includes(column)) {
-    return formatMoney(value);
-  }
-  if (['createdAt', 'updatedAt', 'paidAt', 'completedAt', 'sentAt', 'receivedAt', 'deliveredAt', 'issuedAt', 'startTime', 'endTime'].includes(column)) {
-    return formatDateTime(value);
-  }
-  if (['birthDate', 'planDate', 'expireDate', 'workDate', 'startDate', 'endDate', 'purchaseDate', 'examDate', 'surveyDate'].includes(column)) {
-    return formatDate(value);
-  }
-  return formatDisplayValue(value);
-}
-
-function ReadOnlyListPage({ title, endpoint }: { title: string; endpoint: string }) {
-  const query = useQuery({
-    queryKey: ['stat', endpoint],
-    queryFn: () => apiRequest<Array<Record<string, unknown>> | { items: Array<Record<string, unknown>>; truncated?: boolean }>(endpoint),
-  });
-  if (query.isLoading) return <LoadingState />;
-  if (query.error) return <PageError message={(query.error as Error).message} />;
-  const raw = (query.data ?? []) as Array<Record<string, unknown>> | { items?: Array<Record<string, unknown>>; truncated?: boolean };
-  const rows = Array.isArray(raw) ? raw : (raw.items ?? []);
-  const truncated = !Array.isArray(raw) && Boolean(raw.truncated);
-  const columns = rows.length ? Object.keys(rows[0]) : [];
-  const dataColumns = columns.map((column) => ({
-    key: column,
-    label: SIMPLE_LIST_COLUMN_LABELS[column] ?? column,
-    render: (row: Record<string, unknown>) => formatStatValue(column, row[column]),
-  }));
-  function exportCsv() {
-    /* v8 ignore next -- 导出按钮在 truncated 时 disabled，onClick 不会触发 */
-    if (truncated) return;
-    const lines: string[] = [];
-    lines.push(columns.map((column) => csvCell(SIMPLE_LIST_COLUMN_LABELS[column] ?? column)).join(','));
-    for (const row of rows) {
-      lines.push(columns.map((column) => csvCell(row[column])).join(','));
-    }
-    downloadTextFile(`${title}.csv`, lines.join('\n'));
-  }
-  return (
-    <div className="page">
-      <div className="page-head">
-        <h1>{title}</h1>
-        <button onClick={exportCsv} disabled={truncated}>导出</button>
-      </div>
-      {truncated && <p className="reminder-muted">{'\u8d85\u8fc7\u663e\u793a\u4e0a\u9650\uff0c\u4ec5\u663e\u793a\u90e8\u5206\u6570\u636e'}</p>}
-      <DataTable columns={dataColumns} rows={rows} emptyText="暂无数据" />
-    </div>
-  );
-}
-
-export function ResourcePage({ resource, title, endpoint, initialSearch }: { resource?: string; title?: string; endpoint?: string; initialSearch?: string }) {
-  if (endpoint) return <ReadOnlyListPage title={title ?? '报表'} endpoint={endpoint} />;
+export function ResourcePage({ resource, title, endpoint, initialSearch, columnTypes }: {
+  resource?: string;
+  title?: string;
+  endpoint?: string;
+  initialSearch?: string;
+  /** 只读统计端点的列类型元数据（W-8）：显式声明金额/日期列，避免列名启发式漏判。 */
+  columnTypes?: Record<string, StatColumnType>;
+}) {
+  if (endpoint) return <ReadOnlyListPage title={title ?? '报表'} endpoint={endpoint} columnTypes={columnTypes} />;
   return <ResourceCrudPage resource={resource} initialSearch={initialSearch} />;
 }
 
@@ -187,32 +94,16 @@ function ResourceCrudPage({ resource: fixedResource, initialSearch }: { resource
   );
 
   function openCreate() {
-    const initial: Record<string, unknown> = {};
-    for (const field of editableFields) {
-      if (field.type === 'boolean') {
-        initial[field.name] = field.default === undefined ? false : Boolean(field.default);
-      } else if (field.type === 'json') {
-        initial[field.name] = field.default === undefined ? '{}' : fieldToForm(field, field.default);
-      } else if (field.default !== undefined) {
-        initial[field.name] = fieldToForm(field, field.default);
-      } else {
-        initial[field.name] = '';
-      }
-    }
     setEditingId(null);
-    setForm(initial);
+    setForm(buildInitialForm(editableFields));
     setShowForm(true);
   }
 
   function openEdit(row: Record<string, unknown>) {
     /* v8 ignore next -- 编辑按钮在 stale 期间 disabled，浏览器不派发点击，防御分支不可达 */
     if (staleRows) return;
-    const initial: Record<string, unknown> = {};
-    for (const field of editableFields) {
-      initial[field.name] = fieldToForm(field, row[field.name]);
-    }
     setEditingId(String(row.id));
-    setForm(initial);
+    setForm(formFromRow(editableFields, row));
     setShowForm(true);
   }
 
@@ -223,15 +114,7 @@ function ResourceCrudPage({ resource: fixedResource, initialSearch }: { resource
     submittingRef.current = true;
     setSubmitting(true);
     try {
-      const payload: Record<string, unknown> = {};
-      for (const field of editableFields) {
-        const value = form[field.name];
-        if ((value === '' || value === undefined || value === null) && !field.required) {
-          if (editingId) payload[field.name] = null;
-          continue;
-        }
-        payload[field.name] = fieldValue(field, form[field.name]);
-      }
+      const payload = buildPayload(editableFields, form, editingId);
       if (editingId) {
         await apiRequest(`/resources/${resource}/${editingId}`, {
           method: 'PATCH',
@@ -352,13 +235,8 @@ function ResourceCrudPage({ resource: fixedResource, initialSearch }: { resource
   if (metaQuery.error || listQuery.error) {
     return (
       <div className="page">
-        <PageError message={(metaQuery.error ?? listQuery.error) instanceof Error
-          ? ((metaQuery.error ?? listQuery.error) as Error).message
-          : '加载失败'} />
-        <button onClick={() => {
-          void metaQuery.refetch();
-          void listQuery.refetch();
-        }}>重试</button>
+        <PageError message={(metaQuery.error ?? listQuery.error) instanceof Error ? ((metaQuery.error ?? listQuery.error) as Error).message : '加载失败'} />
+        <button onClick={() => { void metaQuery.refetch(); void listQuery.refetch(); }}>重试</button>
       </div>
     );
   }
@@ -374,16 +252,7 @@ function ResourceCrudPage({ resource: fixedResource, initialSearch }: { resource
         <button disabled={staleRows} onClick={() => void exportCsv()}>导出</button>
         {definition.capabilities.create && <button onClick={openCreate}>新建</button>}
       </div>
-      <SearchInput
-        value={search}
-        onChange={(value) => {
-          setSearch(value);
-          setPage(1);
-          setSelectedIds(new Set());
-        }}
-        placeholder="搜索..."
-        aria-label="搜索"
-      />
+      <SearchInput value={search} onChange={(value) => { setSearch(value); setPage(1); setSelectedIds(new Set()); }} placeholder="搜索..." aria-label="搜索" />
       {selectedIds.size > 0 && (
         <div className="ui-batch-bar">
           <span>已选 {selectedIds.size} 项</span>
@@ -394,53 +263,15 @@ function ResourceCrudPage({ resource: fixedResource, initialSearch }: { resource
       {rows.length === 0 ? (
         <EmptyState message="暂无记录" />
       ) : (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                {tableColumns.map((column) => <th key={column.key}>{column.label}</th>)}
-                {definition.capabilities.delete && (
-                  <th>
-                    <input
-                      type="checkbox"
-                      aria-label="全选当前页"
-                      disabled={staleRows}
-                      checked={rows.length > 0 && rows.every((row) => selectedIds.has(String(row.id)))}
-                      onChange={(event) => toggleSelectAll(event.target.checked)}
-                    />
-                  </th>
-                )}
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, index) => (
-                <tr key={String(row.id ?? index)}>
-                  {tableColumns.map((column) => <td key={column.key}>{column.render(row)}</td>)}
-                  {definition.capabilities.delete && (
-                    <td>
-                      <input
-                        type="checkbox"
-                        aria-label={`选择 ${String(row.id)}`}
-                        disabled={staleRows}
-                        checked={selectedIds.has(String(row.id))}
-                        onChange={(event) => toggleSelect(String(row.id), event.target.checked)}
-                      />
-                    </td>
-                  )}
-                  <td>
-                    {definition.capabilities.update && (
-                      <button disabled={staleRows} onClick={() => openEdit(row)}>编辑</button>
-                    )}
-                    {definition.capabilities.delete && (
-                      <button className="danger" disabled={staleRows} onClick={() => setDeleteTarget(String(row.id))}>删除</button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          columns={resourceTableColumns({
+            tableColumns, canDelete: definition.capabilities.delete, canUpdate: definition.capabilities.update,
+            staleRows, selectedIds, rows,
+            onToggleSelect: toggleSelect, onToggleSelectAll: toggleSelectAll, onEdit: openEdit,
+            onDelete: (row) => setDeleteTarget(String(row.id)),
+          })}
+          rows={rows} keyField="id" emptyText="暂无记录"
+        />
       )}
       <PagePager
         page={page}
@@ -451,43 +282,15 @@ function ResourceCrudPage({ resource: fixedResource, initialSearch }: { resource
           setSelectedIds(new Set());
         }}
       />
-
-      <Dialog
-        open={showForm}
-        title={editingId ? `编辑${label}` : `新建${label}`}
-        onClose={() => setShowForm(false)}
-      >
-        <form onSubmit={submit}>
-          <FormBuilder
-            fields={editableFields}
-            values={form}
-            onChange={(name, value) => setForm((current) => ({ ...current, [name]: value }))}
-          />
-          <div className="modal-actions">
-            <button type="button" onClick={() => setShowForm(false)}>取消</button>
-            <button type="submit" disabled={submitting || (editingId !== null && staleRows)}>{submitting ? '保存中...' : '保存'}</button>
-          </div>
-        </form>
-      </Dialog>
-
-      <ConfirmDialog
-        open={deleteTarget !== null}
-        title="删除确认"
-        message={`确定删除该${label}记录吗？`}
-        confirmText="确认删除"
-        danger
-        onConfirm={() => remove()}
-        onCancel={() => setDeleteTarget(null)}
+      <ResourceFormDialog
+        open={showForm} title={editingId ? `编辑${label}` : `新建${label}`}
+        fields={editableFields} form={form}
+        onChange={(name, value) => setForm((current) => ({ ...current, [name]: value }))}
+        submitting={submitting} submitDisabled={editingId !== null && staleRows}
+        onSubmit={submit} onClose={() => setShowForm(false)}
       />
-      <ConfirmDialog
-        open={batchDeleteOpen}
-        title="批量删除确认"
-        message={`确定删除选中的 ${selectedIds.size} 条${label}记录吗？此操作不可撤销。`}
-        confirmText="批量删除"
-        danger
-        onConfirm={() => void confirmBatchDelete()}
-        onCancel={() => setBatchDeleteOpen(false)}
-      />
+      <DeleteConfirmDialog open={deleteTarget !== null} message={`确定删除该${label}记录吗？`} onConfirm={() => remove()} onCancel={() => setDeleteTarget(null)} />
+      <BatchDeleteConfirmDialog open={batchDeleteOpen} message={`确定删除选中的 ${selectedIds.size} 条${label}记录吗？此操作不可撤销。`} onConfirm={() => void confirmBatchDelete()} onCancel={() => setBatchDeleteOpen(false)} />
     </div>
   );
 }

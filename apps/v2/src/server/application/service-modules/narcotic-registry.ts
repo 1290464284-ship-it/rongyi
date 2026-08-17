@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
+import { keysetCondition, keysetOrder, nextCursorFrom } from '../../infrastructure/keyset';
 import type { AppContext } from '../../../domain/contracts';
 import type { NarcoticCreateInput, NarcoticUpdateInput } from './dispense-types';
 import { assertDoctorExists, assertPatientExists } from './common';
@@ -19,8 +20,8 @@ export class NarcoticRegistryService {
 
   narcoticList(
     context: AppContext,
-    options?: { recordDate?: string; page?: number; pageSize?: number },
-  ): { items: Array<Record<string, unknown>>; total: number; page: number; pageSize: number; truncated?: boolean } {
+    options?: { recordDate?: string; page?: number; pageSize?: number; cursor?: string | null },
+  ): { items: Array<Record<string, unknown>>; total: number; page: number; pageSize: number; truncated?: boolean; nextCursor?: string | null } {
     const recordDate = typeof options?.recordDate === 'string' && options.recordDate.trim() !== ''
       ? options.recordDate.trim()
       : '';
@@ -38,6 +39,17 @@ export class NarcoticRegistryService {
        FROM NarcoticRegistry N
        WHERE N.deletedAt IS NULL${dateClause}${tenantAnd(context.clinicId, 'N.clinicId')}`,
     ).get(...params) as { total: number }).total);
+    // S-2 keyset：两模式统一按 (recordDate DESC, createdAt DESC, id DESC) 排序，恒取 pageSize+1 行。
+    const keyset = {
+      columns: [
+        { column: 'N.recordDate', key: 'recordDate' },
+        { column: 'N.createdAt', key: 'createdAt' },
+      ],
+      idColumn: 'N.id',
+      direction: 'DESC' as const,
+    };
+    const cursorCondition = keysetCondition(options?.cursor, keyset);
+    const hasCursor = cursorCondition.where !== '';
     const rows = this.db.prepare(
       `SELECT N.id, N.recordDate, N.patientId, P.name AS patientName,
               N.doctorId, D.name AS doctorName,
@@ -50,11 +62,18 @@ export class NarcoticRegistryService {
        LEFT JOIN User D ON D.id = N.doctorId
        LEFT JOIN User PH ON PH.id = N.pharmacistId
        LEFT JOIN InventoryItem I ON I.id = N.itemId
-       WHERE N.deletedAt IS NULL${dateClause}${tenantAnd(context.clinicId, 'N.clinicId')}
-       ORDER BY N.recordDate DESC, N.createdAt DESC
-       LIMIT ? OFFSET ?`,
-    ).all(...params, pageSize, offset) as Array<Record<string, unknown>>;
-    return { items: rows, total, page, pageSize, truncated: total > offset + rows.length };
+       WHERE N.deletedAt IS NULL${dateClause}${tenantAnd(context.clinicId, 'N.clinicId')}${cursorCondition.where}
+       ${keysetOrder(keyset)}
+       LIMIT ${pageSize + 1} OFFSET ${hasCursor ? 0 : offset}`,
+    ).all(...params, ...cursorCondition.params) as Array<Record<string, unknown>>;
+    return {
+      items: rows.slice(0, pageSize),
+      total,
+      page,
+      pageSize,
+      truncated: total > offset + rows.slice(0, pageSize).length,
+      nextCursor: nextCursorFrom(rows, pageSize, keyset),
+    };
   }
 
   recordNarcotic(input: NarcoticCreateInput, context: AppContext): Record<string, unknown> {

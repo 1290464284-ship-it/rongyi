@@ -257,6 +257,18 @@ describe('MemberDiscountService', () => {
     expect(none.discount).toBe(1510);
   });
 
+  it('caps ROUND rounding at the base total so the quote never exceeds the original price', () => {
+    const service = new MemberDiscountService(db);
+    const cardId = createCard('MD-CARD-7D');
+    // 零折扣 + 分位 ≥ 50 时 ROUND 向上取整会越过原价（199 → 200），封顶后应付恒 ≤ 原价
+    service.savePlan(cardId, { discountRate: 100, roundingMode: 'ROUND' }, context);
+    const quote = service.quote(cardId, { baseTotal: 199 }, context);
+    expect(quote.total as number).toBeLessThanOrEqual(quote.baseTotal as number);
+    expect(quote.discount as number).toBeGreaterThanOrEqual(0);
+    expect(quote.total).toBe(199);
+    expect(quote.discount).toBe(0);
+  });
+
   it('quote returns NO_PLAN when the card has neither a base rate nor special discounts', () => {
     const cardId = createCard('MD-CARD-8');
     const service = new MemberDiscountService(db);

@@ -1,12 +1,11 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
 import { CrudPage } from '../../components/CrudPage';
-import { SearchableSelect, type DataTableColumn } from '../../components';
+import { DoctorSelect, SearchableSelect, type DataTableColumn } from '../../components';
 import { errorMessage } from '../../lib/messages';
 import { createInFlightGuard } from '../../lib/in-flight';
 import { VISIT_STATUS_LABELS } from '../../lib/status-extra-labels';
-import { toLocalInput } from '../../lib/format';
+import { toLocalInput, formatDateTime } from '../../lib/format';
 import { useToast } from '../../lib/toast-context';
 
 const STATUS_LABELS = VISIT_STATUS_LABELS;
@@ -59,7 +58,7 @@ const VISIT_FIELDS: Array<{ key: keyof VisitForm; label: string; kind: 'datetime
 const visitColumns: DataTableColumn<VisitRow>[] = [
   { key: 'patientId', label: '患者', render: (row) => row.patientIdLabel ?? row.patientId ?? '' },
   { key: 'doctorId', label: '医生', render: (row) => row.doctorIdLabel ?? row.doctorId ?? '' },
-  { key: 'startTime', label: '开始时间', render: (row) => row.startTime ? new Date(row.startTime).toLocaleString('zh-CN', { hour12: false }) : '' },
+  { key: 'startTime', label: '开始时间', render: (row) => formatDateTime(row.startTime) },
   { key: 'chiefComplaint', label: '主诉' },
   { key: 'status', label: '状态', render: (row) => STATUS_LABELS[String(row.status ?? '')] ?? String(row.status ?? '') },
 ];
@@ -73,6 +72,7 @@ export function VisitsPage() {
       emptyMessage="暂无就诊"
       queryKey={['visits']}
       endpoint="/resources/visits"
+      paged
       initialForm={emptyForm}
       validate={(form) => (!form.patientId || !form.doctorId || !form.startTime ? '请选择患者、医生并填写开始时间' : null)}
       toPayload={(form) => ({
@@ -118,7 +118,6 @@ async function transitionVisit(
   id: string,
   status: string,
 ) {
-  /* v8 ignore next -- spec「ignores a second status transition while the first is in flight」已覆盖在途去重（探针验证执行、仅 1 次 PATCH），v8 未入账，属采集缺陷 */
   if (!transitionGuard.start(id)) return;
   try {
     await apiRequest(`/visits/${id}/status`, {
@@ -147,7 +146,7 @@ function VisitStatusSelect({ rowId, onTransition, disabled }: {
       disabled={disabled}
       aria-label="变更就诊状态"
       onChange={(event) => {
-        /* v8 ignore next -- 本页列表无分页/搜索（queryKey 恒定），disabled 恒为 false，守卫为防御冗余 */
+        /* v8 ignore next -- 本页列表无分页/搜索（queryKey 恒定、同 key refetch 不产生 placeholderData），disabled 恒为 false，守卫为防御冗余（见 coverage-exclusions §4） */
         if (disabled) return;
         const next = event.target.value;
         setValue('');
@@ -163,25 +162,13 @@ function VisitStatusSelect({ rowId, onTransition, disabled }: {
 }
 
 function VisitForm({ form, update }: { form: VisitForm; update: (patch: Partial<VisitForm>) => void }) {
-  const doctors = useQuery({
-    queryKey: ['visit-doctors'],
-    queryFn: () => apiRequest<Array<Record<string, unknown>>>('/doctors'),
-  });
   return (
     <>
       <label>
         患者
         <SearchableSelect resource="patients" value={form.patientId} onChange={(id) => update({ patientId: id })} ariaLabel="患者" placeholder="选择患者" />
       </label>
-      <label>
-        医生
-        <select value={form.doctorId} onChange={(event) => update({ doctorId: event.target.value })}>
-          <option value="">选择医生</option>
-          {doctors.data?.map((row) => (
-            <option key={String(row.id)} value={String(row.id)}>{String(row.name ?? row.id)}</option>
-          ))}
-        </select>
-      </label>
+      <DoctorSelect label="医生" value={form.doctorId} onChange={(id) => update({ doctorId: id })} />
       {VISIT_FIELDS.map((field) => (
         <label key={field.key}>
           {field.label}

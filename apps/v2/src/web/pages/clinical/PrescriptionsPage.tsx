@@ -56,6 +56,7 @@ export function PrescriptionsPage() {
         emptyMessage="暂无处方"
         queryKey={['prescriptions']}
         endpoint="/resources/prescriptions"
+        paged
         initialForm={() => {
           editingIdRef.current = null;
           prescriptionItemsLoadedRef.current = false;
@@ -119,9 +120,9 @@ export function PrescriptionsPage() {
           )
         }
         renderForm={(ctx) => {
-          updateFormRef.current = ctx.update;
           return (
             <>
+              <UpdateFormRefSync update={ctx.update} onSync={(update) => { updateFormRef.current = update; }} />
               {prescriptionItemsError && <p className="error">{prescriptionItemsError}</p>}
               <PrescriptionFormFields form={ctx.form} update={ctx.update} editing={ctx.editing} />
             </>
@@ -164,4 +165,18 @@ function ProcessPrescriptionButton({
       {busy ? '处理中...' : '处理'}
     </button>
   );
+}
+
+// M9 约定：renderForm 渲染期写 ref 迁移到 effect，避免反模式回潮。
+function UpdateFormRefSync({
+  update,
+  onSync,
+}: {
+  update: (patch: Partial<PrescriptionForm>) => void;
+  onSync: (update: (patch: Partial<PrescriptionForm>) => void) => void;
+}) {
+  useEffect(() => {
+    onSync(update);
+  }, [update, onSync]);
+  return null;
 }

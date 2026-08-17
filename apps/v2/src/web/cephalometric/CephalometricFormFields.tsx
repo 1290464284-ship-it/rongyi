@@ -1,4 +1,5 @@
 import { SearchableSelect } from '../components';
+import { CLINICAL_STATUS_LABELS } from '../lib/labels';
 import type { CephalometricForm } from './types';
 
 export function CephalometricFormFields({
@@ -19,10 +20,15 @@ export function CephalometricFormFields({
       </label>
       <label>
         状态
-        <input value={form.status} onChange={(event) => update({ status: event.target.value })} />
+        <select value={form.status} onChange={(event) => update({ status: event.target.value })}>
+          {Object.entries(CLINICAL_STATUS_LABELS).map(([value, label]) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
       </label>
       <label>
         模板 ID
+        {/* 模板为自由文本标识（无独立模板字典端点），保持文本输入 */}
         <input value={form.templateId} onChange={(event) => update({ templateId: event.target.value })} />
       </label>
       <label>

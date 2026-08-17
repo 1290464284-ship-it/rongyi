@@ -3,6 +3,7 @@ import type Database from 'better-sqlite3';
 import { NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
 import { MAX_MONEY_CENTS } from './common';
+import { loadChargeItems, type CommissionItemRow } from './commission-items';
 import type { AppContext } from '../../../domain/contracts';
 
 const PERIOD_RE = /^\d{4}-\d{2}$/;
@@ -66,13 +67,6 @@ interface ChargeRow {
   paidAmount: number;
   refundedAmount: number;
   totalAmount: number;
-}
-
-interface ItemRow {
-  chargeId: string;
-  category: string;
-  costType: string;
-  subtotal: number;
 }
 
 interface StatementRow {
@@ -156,13 +150,7 @@ export class CommissionService {
        WHERE paidAt >= ? AND paidAt < ? AND deletedAt IS NULL${tenantAnd(context.clinicId)}`,
     ).all(start, endExclusive, ...tenantParams(context.clinicId)) as ChargeRow[];
     const chargeIds = charges.map((charge) => charge.id);
-
-    const items = chargeIds.length > 0
-      ? (this.db.prepare(
-          `SELECT chargeId, category, COALESCE(costType, 'SERVICE') AS costType, subtotal
-           FROM ChargeItem WHERE chargeId IN (${chargeIds.map(() => '?').join(',')}) AND deletedAt IS NULL`,
-        ).all(...chargeIds) as ItemRow[])
-      : [];
+    const items = loadChargeItems(this.db, chargeIds);
 
     const rules = this.listRules(context);
     const lines = buildLines(charges, items);
@@ -344,8 +332,8 @@ function nextMonth(period: string): string {
   return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`;
 }
 
-function buildLines(charges: ChargeRow[], items: ItemRow[]): CommissionLine[] {
-  const byCharge = new Map<string, ItemRow[]>();
+function buildLines(charges: ChargeRow[], items: CommissionItemRow[]): CommissionLine[] {
+  const byCharge = new Map<string, CommissionItemRow[]>();
   for (const item of items) {
     const list = byCharge.get(item.chargeId) ?? [];
     list.push(item);

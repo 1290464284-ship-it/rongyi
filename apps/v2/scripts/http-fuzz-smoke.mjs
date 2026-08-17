@@ -1,7 +1,8 @@
-import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { pickFreePort } from './lib/smoke-runtime.mjs';
+import { createDrill } from './lib/drill-runtime.mjs';
 
 const appRoot = path.resolve(import.meta.dirname, '..');
 const serverScript = path.join(appRoot, 'dist-electron', 'server.cjs');
@@ -11,88 +12,39 @@ const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-http-fuzz-'));
 const dataDir = path.join(tempRoot, 'data');
 const backupDir = path.join(dataDir, 'backups');
 const logDir = path.join(dataDir, 'logs');
-const port = 34000 + Math.floor(Math.random() * 2000);
+const port = await pickFreePort(34000, 35999);
 const jwtSecret = 'http-fuzz-secret-0123456789abcdef0123456789abcdef';
 const backupKey = 'http-fuzz-backup-key-0123456789abcdef';
 const adminPassword = 'FuzzSmokeAdmin123!';
-const base = `http://127.0.0.1:${port}/api/v2`;
 
 if (!fs.existsSync(serverScript)) {
   console.error('dist-electron/server.cjs not found. Run electron:compile first.');
   process.exit(1);
 }
 
-let apiProcess = null;
+const drill = createDrill({
+  appRoot,
+  serverScript,
+  legacyDb,
+  legacySchemaDir,
+  dataDir,
+  backupDir,
+  logDir,
+  port,
+  jwtSecret,
+  backupKey,
+  adminPassword,
+  dbPath: path.join(dataDir, 'v2.sqlite'),
+  readyLabel: 'HTTP fuzz smoke',
+});
 
-function waitForApi(timeoutMs = 30_000) {
-  const startedAt = Date.now();
-  return new Promise((resolve, reject) => {
-    const attempt = async () => {
-      if (Date.now() - startedAt > timeoutMs) {
-        reject(new Error('API did not become ready during HTTP fuzz smoke'));
-        return;
-      }
-      try {
-        const response = await fetch(`${base}/health`, { signal: AbortSignal.timeout(1000) });
-        if (response.ok) {
-          resolve();
-          return;
-        }
-      } catch {
-        // retry
-      }
-      setTimeout(() => void attempt(), 500);
-    };
-    void attempt();
-  });
-}
-
-async function startApi() {
-  fs.mkdirSync(dataDir, { recursive: true });
-  fs.mkdirSync(backupDir, { recursive: true });
-  fs.mkdirSync(logDir, { recursive: true });
-  apiProcess = spawn(process.execPath, [serverScript], {
-    cwd: appRoot,
-    env: {
-      ...process.env,
-      V2_PORT: String(port),
-      V2_HOST: '127.0.0.1',
-      NODE_ENV: 'development',
-      V2_DATA_DIR: dataDir,
-      V2_BACKUP_DIR: backupDir,
-      V2_LOG_DIR: logDir,
-      V2_LEGACY_DB_PATH: legacyDb,
-      V2_LEGACY_SCHEMA_DIR: legacySchemaDir,
-      V2_DB_PATH: path.join(dataDir, 'v2.sqlite'),
-      V2_JWT_SECRET: jwtSecret,
-      V2_BACKUP_KEY: backupKey,
-      V2_ADMIN_PASSWORD: adminPassword,
-    },
-    stdio: ['ignore', 'pipe', 'pipe'],
-    windowsHide: true,
-  });
-  await waitForApi();
-}
-
-function stopApi() {
-  return new Promise((resolve) => {
-    if (!apiProcess || apiProcess.killed) {
-      resolve();
-      return;
-    }
-    apiProcess.once('exit', resolve);
-    apiProcess.kill();
-    setTimeout(() => {
-      if (apiProcess && !apiProcess.killed) apiProcess.kill('SIGKILL');
-    }, 5000).unref();
-  });
-}
+const { startApi, stopApi } = drill;
 
 async function rawRequest(pathname, options = {}, token = null) {
   const headers = { 'content-type': 'application/json', ...(options.headers ?? {}) };
   if (token) headers.authorization = `Bearer ${token}`;
   try {
-    const response = await fetch(`${base}${pathname}`, { ...options, headers });
+    const response = await fetch(`${drill.base}${pathname}`, { ...options, headers });
     const bodyText = await response.text();
     let body = null;
     try {

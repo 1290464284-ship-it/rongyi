@@ -22,7 +22,6 @@ interface TreeProps {
 
 function TreeNodeView({
   node,
-  depth,
   selectedId,
   expandedIds,
   onToggle,
@@ -32,7 +31,6 @@ function TreeNodeView({
   toggle,
 }: {
   node: TreeNode;
-  depth: number;
   selectedId?: string | null;
   expandedIds?: Record<string, boolean>;
   onToggle?: (id: string) => void;
@@ -55,7 +53,6 @@ function TreeNodeView({
     <div className="ui-tree-node">
       <div
         className={`ui-tree-item${selectedId === node.id ? ' selected' : ''}`}
-        style={{ paddingLeft: depth * 16 + 8 }}
       >
         {hasChildren && (
           <button
@@ -104,7 +101,6 @@ function TreeNodeView({
             <TreeNodeView
               key={child.id}
               node={child}
-              depth={depth + 1}
               selectedId={selectedId}
               expandedIds={expandedIds}
               onToggle={onToggle}
@@ -143,7 +139,6 @@ export function Tree({
         <TreeNodeView
           key={node.id}
           node={node}
-          depth={0}
           selectedId={selectedId}
           expandedIds={expandedIds}
           onToggle={onToggle}

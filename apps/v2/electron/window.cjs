@@ -179,11 +179,18 @@ function createWindow() {
   });
   const RENDERER_CRASH_WINDOW_MS = 10 * 60 * 1000;
   const RENDERER_CRASH_MAX = 3;
+  // E-2：成功加载后稳定期内未再崩溃则重置计数，避免「偶发崩溃 + 已恢复」仍占用崩溃环额度。
+  const RENDERER_STABILITY_MS = 30 * 1000;
   let rendererCrashCount = 0;
   let rendererCrashWindowStart = 0;
+  let rendererStabilityTimer = null;
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
     crashLog('render-process-gone', new Error(`reason=${details.reason} exitCode=${details.exitCode}`));
     if (state.isQuitting) return;
+    if (rendererStabilityTimer) {
+      clearTimeout(rendererStabilityTimer);
+      rendererStabilityTimer = null;
+    }
     const now = Date.now();
     if (now - rendererCrashWindowStart > RENDERER_CRASH_WINDOW_MS) {
       rendererCrashCount = 0;
@@ -201,6 +208,15 @@ function createWindow() {
       if (!mainWindow.isDestroyed() && !state.isQuitting) mainWindow.reload();
     }, delay);
   });
+  mainWindow.webContents.on('did-finish-load', () => {
+    // 成功加载后稳定 30s：崩溃环（加载后随即崩溃）仍会快速累积到上限，偶发崩溃则被重置。
+    if (rendererStabilityTimer) clearTimeout(rendererStabilityTimer);
+    rendererStabilityTimer = setTimeout(() => {
+      rendererCrashCount = 0;
+      rendererCrashWindowStart = 0;
+      rendererStabilityTimer = null;
+    }, RENDERER_STABILITY_MS);
+  });
   mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription) => {
     if (errorCode !== -3) crashLog('did-fail-load', new Error(`${errorCode} ${errorDescription}`));
   });
@@ -211,12 +227,15 @@ function createWindow() {
     : (runtimeHtml ? pathToFileURL(runtimeHtml).toString() : INDEX_HTML_FILE_URL);
   mainWindow.loadURL(url);
   mainWindow.on('close', (event) => {
-    saveWindowState(mainWindow);
     if (!state.isQuitting && state.tray) {
+      // 仅“关窗进托盘”路径在此保存；正常退出由 closed 统一保存，避免重复写盘。
+      saveWindowState(mainWindow);
       event.preventDefault();
       mainWindow.hide();
     }
   });
+  // destroy() 直接销毁的窗口不触发 close，closed 是唯一兜底（saveWindowState
+  // 内部对已销毁窗口 no-op，不会二次写入）。
   mainWindow.on('closed', () => {
     saveWindowState(mainWindow);
   });

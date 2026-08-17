@@ -8,6 +8,7 @@ import { rebuildSearchIndex } from '../src/server/infrastructure/search-index';
 // 模拟库管理员密码固定为 v2-sim-admin-password（不读外层 V2_ADMIN_PASSWORD）：
 // 产物必须与环境无关，否则 permission-smoke 在 smoke:all（外层设了密码）下
 // 因库内管理员与登录密码不一致而 401。
+// 契约镜像：scripts/lib/sim-admin.mjs（脚本消费端默认值）——改密码需两处同步。
 process.env.V2_ADMIN_PASSWORD = 'v2-sim-admin-password';
 
 const targetDir = process.env.V2_SIM_DATA_DIR

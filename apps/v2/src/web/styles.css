@@ -48,6 +48,49 @@
   --login-card-shadow: 0 12px 32px rgba(13, 130, 130, 0.1);
   --btn-login-shadow: 0 4px 12px rgba(14, 138, 138, 0.28);
 
+  /* A2：主色底上的文字。亮色白字 on #0D8282 = 4.63:1 达标；
+     暗色主色提亮为 #14A0A0 后白字仅 3.19:1 不达 AA，改用深青字（≈5.9:1） */
+  --on-primary: #FFFFFF;
+  /* A12：条码条色。条码底恒白（打印语义），条恒深青保证两主题可读 */
+  --barcode-ink: #16303A;
+
+  /* 二期：刻度 token（A3/A7/A8/A10/A11 收敛） */
+  /* 间距 4px 基 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  /* 字号七档（11/12/13/14/16/18/24，消灭 10.5/11.5/12.5/15/19/22 孤值） */
+  --fs-xs: 11px;
+  --fs-sm: 12px;
+  --fs-base: 13px;
+  --fs-md: 14px;
+  --fs-lg: 16px;
+  --fs-xl: 18px;
+  --fs-2xl: 24px;
+  /* 控件高度三档（32/38/40） */
+  --control-h-sm: 32px;
+  --control-h-md: 38px;
+  --control-h-lg: 40px;
+  /* 卡片内边距三档（card 18 / panel 16 / compact 12） */
+  --card-pad: 18px;
+  --card-pad-panel: 16px;
+  --card-pad-compact: 12px;
+  /* z-index 阶梯（A10） */
+  --z-sidebar: 5;
+  --z-topbar: 20;
+  --z-modal: 20;
+  --z-toast: 40;
+  --z-tooltip: 60;
+  --z-skip: 1200;
+  /* 胶囊圆角（A11） */
+  --radius-pill: 999px;
+  /* 语义色底上的文字（暗色用深青保证对比度） */
+  --on-semantic: #FFFFFF;
+
   /* 图表系列色 */
   --chart-purple: #7C3AED;
   --chart-1: #2563eb;
@@ -133,6 +176,9 @@
     --login-card-border: rgba(20, 160, 160, 0.35);
     --login-card-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
     --btn-login-shadow: 0 4px 12px rgba(20, 160, 160, 0.35);
+    /* A2：暗色主色底上改用深青字（#0C171A on #14A0A0 ≈ 5.9:1） */
+    --on-primary: #0C171A;
+    --on-semantic: #0C171A;
 
     /* 图表系列色 */
     --chart-purple: #A78BFA;
@@ -167,7 +213,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--fs-base);
   line-height: 1.45;
   overflow-x: hidden;
 }
@@ -232,21 +278,21 @@ a {
   gap: 10px;
   padding: 4px 2px 16px 10px;
   position: relative;
-  z-index: 5;
+  z-index: var(--z-sidebar);
   font-weight: 700;
-  font-size: 15px;
+  font-size: var(--fs-lg);
   color: var(--primary);
 }
 
 .sidebar-brand-text strong {
   display: block;
   color: var(--sidebar-text);
-  font-size: 15px;
+  font-size: var(--fs-lg);
 }
 
 .sidebar-brand-text span {
   color: var(--muted-weak);
-  font-size: 11px;
+  font-size: var(--fs-xs);
 }
 
 .sidebar-logo {
@@ -274,7 +320,7 @@ a {
 }
 
 .sidebar-group {
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   color: var(--muted-weak);
   letter-spacing: 0.05em;
   padding: 10px 10px 4px;
@@ -407,12 +453,12 @@ a {
 
 .sidebar-card strong {
   color: var(--sidebar-text);
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 
 .sidebar-card span {
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--fs-xs);
 }
 
 .sidebar-card-btn {
@@ -423,7 +469,7 @@ a {
   color: var(--primary);
   border-radius: var(--radius-sm);
   padding: 4px 8px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
 }
@@ -443,7 +489,7 @@ a {
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
-  z-index: 20;
+  z-index: var(--z-topbar);
 }
 
 .topbar-left {
@@ -454,7 +500,7 @@ a {
 }
 
 .topbar-title {
-  font-size: 19px;
+  font-size: var(--fs-xl);
   font-weight: 700;
   letter-spacing: -0.01em;
   white-space: nowrap;
@@ -497,12 +543,12 @@ a {
 
 .topbar-search {
   width: 280px;
-  height: 32px;
+  height: var(--control-h-sm);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--bg);
   padding: 0 12px;
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-family: var(--font);
   color: var(--text);
   outline: none;
@@ -520,7 +566,7 @@ a {
   align-items: center;
   gap: 8px;
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: var(--fs-sm);
   white-space: nowrap;
 }
 
@@ -543,7 +589,11 @@ a {
 }
 
 .content > * {
-  animation: pageRise 200ms var(--ease) both;
+  /* A1：不使用 fill-mode both——fill 会把终态 transform 永久残留（即使终态写 none，
+     keyframe 内也会被归一化为 identity 矩阵），使 .page/.hub 成为 stacking context，
+     把弹窗遮罩（position:fixed）困进页面内：遮罩不盖顶栏且高度盖满整段滚动内容。
+     动画结束后自然回到基础样式（无 transform），不再产生 containing block。 */
+  animation: pageRise 200ms var(--ease);
 }
 
 @keyframes pageRise {
@@ -566,7 +616,7 @@ a {
   position: absolute;
   left: -9999px;
   top: 0;
-  z-index: 1200;
+  z-index: var(--z-skip);
   background: var(--surface);
   color: var(--text);
   padding: 8px 12px;
@@ -586,7 +636,7 @@ a {
 
 .barcode-svg {
   display: block;
-  color: var(--text);
+  color: var(--barcode-ink);
   background: #fff;
 }
 
@@ -594,7 +644,7 @@ a {
   display: grid;
   gap: 10px;
   justify-items: center;
-  padding: 16px;
+  padding: var(--card-pad-panel);
   background: #fff;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -608,7 +658,7 @@ a {
 
 .page h1 {
   margin-top: 0;
-  font-size: 18px;
+  font-size: var(--fs-xl);
   font-weight: 700;
   letter-spacing: -0.01em;
 }
@@ -639,13 +689,13 @@ a {
 /* 区块标题：14px/600（设计稿 B+A 层级） */
 .content h2,
 .content h3 {
-  font-size: 14px;
+  font-size: var(--fs-md);
   font-weight: 600;
 }
 
 .hub h1 {
   margin-top: 0;
-  font-size: 18px;
+  font-size: var(--fs-xl);
   font-weight: 700;
   letter-spacing: -0.01em;
 }
@@ -681,7 +731,7 @@ a {
 .tab-group {
   align-self: center;
   margin: 0 4px 0 6px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 700;
   color: var(--muted);
   white-space: nowrap;
@@ -764,7 +814,7 @@ a {
   background: var(--backdrop);
   display: grid;
   place-items: center;
-  z-index: 20;
+  z-index: var(--z-modal);
   animation: maskIn 150ms var(--ease);
 }
 
@@ -843,7 +893,7 @@ a {
 
 .skeleton-line {
   height: 12px;
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
   background: linear-gradient(90deg, var(--surface-muted) 25%, var(--border-soft) 50%, var(--surface-muted) 75%);
   background-size: 200% 100%;
   animation: skeletonShimmer 1.2s linear infinite;
@@ -903,7 +953,7 @@ small {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  padding: 14px 16px;
+  padding: var(--card-pad-panel);
   display: grid;
   gap: 4px;
   transition: box-shadow var(--dur) var(--ease);
@@ -914,18 +964,18 @@ small {
 }
 
 .stat-value {
-  font-size: 24px;
+  font-size: var(--fs-2xl);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
 
 .stat-label {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--muted);
 }
 
 .stat-trend {
-  font-size: 10.5px;
+  font-size: var(--fs-xs);
   font-weight: 600;
   color: var(--success);
 }
@@ -961,7 +1011,7 @@ small {
 
 .sub {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 
 .dashboard-page .page-head {
@@ -1043,12 +1093,12 @@ small {
 
 .todo-item strong {
   display: block;
-  font-size: 13px;
+  font-size: var(--fs-base);
 }
 
 .todo-item span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 
 .today-appointments-card {
@@ -1071,12 +1121,19 @@ small {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 10px 12px;
+  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+
+/* B1：今日预约行补 hover 态（teal 浅底 + 主色描边） */
+.appointment-row:hover {
+  background: var(--soft);
+  border-color: var(--primary);
 }
 
 .appointment-time {
   flex-shrink: 0;
   color: var(--primary);
-  font-size: 13px;
+  font-size: var(--fs-base);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -1088,12 +1145,12 @@ small {
 
 .appointment-main strong {
   display: block;
-  font-size: 13px;
+  font-size: var(--fs-base);
 }
 
 .appointment-main span {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 
 .appointment-row .status {
@@ -1105,7 +1162,7 @@ small {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  padding: 18px;
+  padding: var(--card-pad);
   display: grid;
   gap: 8px;
   transition: box-shadow var(--dur) var(--ease);
@@ -1127,7 +1184,7 @@ small {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  padding: 16px;
+  padding: var(--card-pad-panel);
   min-width: 0;
   transition: box-shadow var(--dur) var(--ease);
 }
@@ -1142,7 +1199,7 @@ small {
 
 .analytics-panel h2 {
   margin: 0 0 14px;
-  font-size: 14px;
+  font-size: var(--fs-md);
   font-weight: 600;
 }
 
@@ -1159,7 +1216,7 @@ small {
 }
 
 .bar-label {
-  font-size: 13px;
+  font-size: var(--fs-base);
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1197,7 +1254,7 @@ small {
 }
 
 .bar-value {
-  font-size: 13px;
+  font-size: var(--fs-base);
   text-align: right;
   color: var(--text);
   font-variant-numeric: tabular-nums;
@@ -1302,54 +1359,7 @@ small {
   }
 }
 
-.board {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(190px, 1fr));
-  gap: 12px;
-  overflow-x: auto;
-  align-items: start;
-}
-
-.board-column {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  padding: 12px;
-  min-width: 0;
-  min-height: 320px;
-  display: grid;
-  align-content: start;
-  gap: 10px;
-}
-
-.board-column header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-weight: 600;
-}
-
-.board-card {
-  background: var(--surface-muted);
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-sm);
-  padding: 10px;
-  display: grid;
-  gap: 6px;
-  transition: opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
-}
-
-.board-card.dragging {
-  opacity: 0.55;
-  transform: scale(0.98);
-}
-
-.board-card time {
-  color: var(--muted);
-  font-size: 13px;
-}
+/* A5：看板体系已统一到 KanbanBoard 组件（.ui-kanban-*），.board* 旧样式移除 */
 
 .board-summary {
   display: flex;
@@ -1363,7 +1373,7 @@ small {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow);
-  padding: 10px 14px;
+  padding: var(--card-pad-compact);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1371,7 +1381,7 @@ small {
 
 .summary-item strong {
   color: var(--primary);
-  font-size: 18px;
+  font-size: var(--fs-xl);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -1382,35 +1392,7 @@ small {
   padding: 8px 0;
 }
 
-.timeline {
-  display: grid;
-  gap: 12px;
-}
-
-.timeline-item {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-left: 4px solid var(--primary);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  padding: 14px 16px;
-  display: grid;
-  gap: 6px;
-}
-
-.timeline-item p {
-  margin: 0;
-  color: var(--muted);
-}
-
-.timeline-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  color: var(--muted);
-  font-size: 13px;
-}
+/* A5：时间线体系已统一到 Timeline 组件（.ui-timeline-*），旧 .timeline* 样式移除 */
 
 /* ---------- 登录页：极简居中 + 薄荷渐变 ---------- */
 .login-page {
@@ -1448,7 +1430,7 @@ small {
 
 .login-d-brand h1 {
   margin: 4px 0 0;
-  font-size: 24px;
+  font-size: var(--fs-2xl);
   font-weight: 700;
   color: var(--text);
   letter-spacing: -0.01em;
@@ -1457,7 +1439,7 @@ small {
 .login-d-brand p {
   margin: 0;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--fs-base);
 }
 
 .login-d-card {
@@ -1481,7 +1463,7 @@ small {
 
 .login-card-head .eyebrow {
   color: var(--primary);
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 700;
   letter-spacing: 0.08em;
 }
@@ -1492,13 +1474,13 @@ small {
 
 .login-card h2 {
   margin: 8px 0 2px;
-  font-size: 22px;
+  font-size: var(--fs-2xl);
   font-weight: 700;
 }
 
 .login-sub {
   margin: 0 0 4px;
-  font-size: 11.5px;
+  font-size: var(--fs-sm);
   color: var(--muted);
 }
 
@@ -1514,12 +1496,12 @@ small {
   align-items: center;
   gap: 6px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 
 .login-meta {
   text-align: center;
-  font-size: 11px;
+  font-size: var(--fs-xs);
   color: var(--muted);
   margin: 4px 0 0;
 }
@@ -1528,12 +1510,12 @@ small {
   display: flex;
   justify-content: space-between;
   color: var(--muted-weak);
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 
 /* 登录表单字段：图标输入框 */
 .login-card .field > label {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   font-weight: 600;
   color: var(--text);
 }
@@ -1560,7 +1542,7 @@ small {
 
 .input-wrap input {
   width: 100%;
-  height: 38px;
+  height: var(--control-h-md);
   padding: 0 12px 0 34px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
@@ -1584,7 +1566,7 @@ small {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   color: var(--muted);
   cursor: pointer;
   user-select: none;
@@ -1601,13 +1583,13 @@ small {
 /* 登录按钮 */
 .btn-login {
   width: 100%;
-  height: 40px;
+  height: var(--control-h-lg);
   border: 0;
   border-radius: var(--radius-sm);
   background: var(--primary);
-  color: #fff;
+  color: var(--on-primary);
   font: inherit;
-  font-size: 14px;
+  font-size: var(--fs-md);
   font-weight: 600;
   letter-spacing: 0.08em;
   cursor: pointer;
@@ -1697,7 +1679,7 @@ textarea {
 
 button {
   background: var(--primary);
-  color: white;
+  color: var(--on-primary);
   border: 0;
   cursor: pointer;
 }
@@ -1759,7 +1741,7 @@ select.error:focus {
 
 .field-error {
   color: var(--danger);
-  font-size: 11px;
+  font-size: var(--fs-xs);
 }
 
 .error {
@@ -1770,7 +1752,7 @@ select.error:focus {
   position: fixed;
   right: 18px;
   top: 18px;
-  z-index: 40;
+  z-index: var(--z-toast);
   display: grid;
   gap: 10px;
   max-width: min(360px, calc(100vw - 36px));
@@ -1779,7 +1761,7 @@ select.error:focus {
 .toast {
   border-radius: var(--radius-sm);
   padding: 12px 14px;
-  color: white;
+  color: var(--on-semantic);
   box-shadow: var(--shadow-toast);
   animation: toastIn var(--dur-slow) var(--ease);
 }
@@ -1799,6 +1781,7 @@ select.error:focus {
 
 .toast.info {
   background: var(--primary);
+  color: var(--on-primary);
 }
 
 .toast.leaving {
@@ -1822,7 +1805,7 @@ select.error:focus {
 .table-note {
   padding: 8px 12px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   background: var(--surface-muted);
   border-bottom: 1px solid var(--border-soft);
 }
@@ -1854,7 +1837,7 @@ th {
   background: var(--surface-muted);
   position: sticky;
   top: 0;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   font-weight: 600;
   color: var(--muted);
 }
@@ -1869,7 +1852,7 @@ tbody tr:hover {
 
 .table-muted {
   color: var(--muted-weak);
-  font-size: 13px;
+  font-size: var(--fs-base);
 }
 
 .imaging-thumb {
@@ -1886,7 +1869,7 @@ tbody tr:hover {
   min-height: 64px;
   padding: 0 12px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   background: var(--surface-muted);
   border: 1px dashed var(--border-strong);
   border-radius: var(--radius-xs);
@@ -1923,7 +1906,7 @@ tbody tr:hover {
 .reminder-card {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 12px 14px;
+  padding: var(--card-pad-compact);
   background: var(--surface);
   box-shadow: var(--shadow);
 }
@@ -1936,14 +1919,7 @@ tbody tr:hover {
   flex-wrap: wrap;
 }
 
-.reminder-head .tag {
-  font-size: 12px;
-  padding: 2px 10px;
-  border-radius: var(--radius-xs);
-  background: var(--soft);
-  color: var(--primary);
-}
-
+/* A16：.tag 样式收敛到全局基类（.tag），此处只保留语义色变体 */
 .reminder-head .tag.recall {
   background: var(--success-soft);
   color: var(--success);
@@ -1967,7 +1943,7 @@ tbody tr:hover {
 
 .reminder-muted {
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--fs-base);
 }
 
 .reminder-empty {
@@ -2004,13 +1980,7 @@ tbody tr:hover {
   flex-wrap: wrap;
 }
 
-.wechat-template-head .tag {
-  font-size: 12px;
-  padding: 2px 8px;
-  border-radius: var(--radius-xs);
-  background: var(--soft);
-  color: var(--primary);
-}
+/* A16：.tag 样式收敛到全局基类（.tag） */
 
 .wechat-template-content {
   margin: 0 0 8px;
@@ -2020,7 +1990,7 @@ tbody tr:hover {
   background: var(--surface-muted);
   color: var(--text);
   font-family: var(--font);
-  font-size: 13px;
+  font-size: var(--fs-base);
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
@@ -2029,7 +1999,7 @@ tbody tr:hover {
 .wechat-template-sample {
   margin: 0 0 10px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--fs-base);
   line-height: 1.6;
 }
 
@@ -2059,7 +2029,7 @@ tbody tr:hover {
   display: grid;
   gap: 6px;
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--fs-base);
 }
 
 .wechat-reminder-settings-grid input[type="number"] {
@@ -2073,6 +2043,113 @@ tbody tr:hover {
   padding: 18px 12px;
   color: var(--muted-weak);
   text-align: center;
+}
+
+/* === 补齐类（第二轮 A6：8 处「用了没样式」+ B1 状态徽章 + A16 tag 基类 + A18 弹窗关闭钮） === */
+
+/* 工作台今日预约状态徽章（DashboardPage；类名静态不随状态变化，采用中性徽章避免误导） */
+.appointment-row .status {
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  color: var(--muted);
+  border-radius: var(--radius-xs);
+  padding: 2px 8px;
+  font-size: var(--fs-sm);
+}
+
+/* .arrived 为静态类名，样式由上述 .appointment-row .status 承担；显式登记使类失配扫描归零 */
+.appointment-row .status.arrived {
+}
+
+/* 库存报表截断提示（同 .reminder-muted 规格） */
+.report-truncated {
+  color: var(--muted);
+  font-size: var(--fs-base);
+}
+
+/* FormBuilder 关联字段加载上限提示（同 .searchable-select-cap 规格） */
+.relation-load-cap {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+/* Tree 节点包裹容器 */
+.ui-tree-node {
+  display: grid;
+  gap: 2px;
+}
+
+/* 头影对比选项容器（与 .ceph-compare-controls 同规格） */
+.ceph-compare-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+/* 影像对比工具栏（与 .imaging-compare-controls 同规格） */
+.imaging-compare-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 12px;
+}
+
+/* 侧栏分组包裹：纯语义包裹，无任何样式（保持块级包裹以维持 nav grid 原布局；
+   显式登记此规则使类失配扫描归零） */
+.sidebar-group-wrap {
+}
+
+/* 牙位图上排修饰：默认 .ui-tooth 形状即为上排（6px 6px 10px 10px），
+   显式登记此规则使类失配扫描归零（lower 有覆盖、upper 与默认一致） */
+.ui-tooth-grid.upper .ui-tooth {
+  border-radius: 6px 6px 10px 10px;
+}
+
+/* 通用标签基类（A16：统一 reminder/template 两处拷贝，取值 2px 10px） */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--fs-sm);
+  padding: 2px 10px;
+  border-radius: var(--radius-xs);
+  background: var(--soft);
+  color: var(--primary);
+}
+
+/* 备份数据摘要对比网格（C1：BackupsPage 内联样式转类，1rem=16px 按 4px 刻度） */
+.backup-comparison {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+/* 弹窗头部：标题 + 显式关闭按钮（A18） */
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.modal-close {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.modal-close:hover {
+  background: var(--surface-muted);
+  color: var(--text);
 }
 
 /* 表格行操作按钮组 */
@@ -2113,7 +2190,7 @@ tbody tr:hover {
   color: var(--primary);
   border-radius: var(--radius-xs);
   padding: 2px 10px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 
 /* 工作台今日概览 */
@@ -2122,7 +2199,7 @@ tbody tr:hover {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  padding: 16px;
+  padding: var(--card-pad-panel);
   margin-bottom: 16px;
   display: grid;
   gap: 12px;
@@ -2148,14 +2225,14 @@ tbody tr:hover {
 }
 
 .today-stat strong {
-  font-size: 24px;
+  font-size: var(--fs-2xl);
   color: var(--primary);
   font-variant-numeric: tabular-nums;
 }
 
 .today-stat span {
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--fs-base);
 }
 
 .today-lists {
@@ -2174,7 +2251,7 @@ tbody tr:hover {
 
 .today-list h3 {
   margin: 0 0 8px;
-  font-size: 14px;
+  font-size: var(--fs-md);
 }
 
 .today-list ul,
@@ -2196,7 +2273,7 @@ tbody tr:hover {
   border: 1px solid var(--border-soft);
   border-radius: var(--radius-xs);
   padding: 8px 10px;
-  font-size: 13px;
+  font-size: var(--fs-base);
 }
 
 /* 分诊队列 */
@@ -2205,7 +2282,7 @@ tbody tr:hover {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  padding: 16px;
+  padding: var(--card-pad-panel);
   margin-top: 16px;
   display: grid;
   gap: 12px;
@@ -2228,7 +2305,7 @@ tbody tr:hover {
   color: var(--success);
   border-radius: var(--radius-xs);
   padding: 2px 10px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 
 /* 角色徽标/附加岗位 */
@@ -2237,7 +2314,7 @@ tbody tr:hover {
   color: var(--primary);
   border-radius: var(--radius-xs);
   padding: 2px 10px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   white-space: nowrap;
 }
 
@@ -2324,7 +2401,7 @@ tbody tr:hover {
 .searchable-select-cap {
   display: block;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-sm);
 }
 
 /* 收费项目树 */
@@ -2333,7 +2410,7 @@ tbody tr:hover {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  padding: 12px;
+  padding: var(--card-pad-compact);
 }
 
 .charge-tree {
@@ -2359,7 +2436,7 @@ tbody tr:hover {
 }
 
 .catalog-tag {
-  font-size: 11px;
+  font-size: var(--fs-xs);
   background: var(--warning-soft);
   color: var(--warning);
   border-radius: var(--radius-xs);
@@ -2417,7 +2494,7 @@ tbody tr:hover {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  padding: 16px;
+  padding: var(--card-pad-panel);
   display: grid;
   gap: 8px;
 }
@@ -2521,7 +2598,7 @@ tbody tr:hover {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: var(--fs-base);
 }
 
 .ceph-compare-color {
@@ -2575,7 +2652,7 @@ tbody tr:hover {
 
 .imaging-compare-item figcaption {
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--fs-base);
   display: grid;
   gap: 4px;
 }
@@ -2585,183 +2662,9 @@ tbody tr:hover {
   padding: 12px 0;
 }
 
-/* 看板拖拽反馈 */
-.board-column.drag-over {
-  outline: 2px dashed var(--primary);
-  outline-offset: -2px;
-  background: var(--soft);
-}
+/* A5：看板拖拽反馈统一由 .ui-kanban-col.drag-over 承担，旧 .board-column 样式已移除 */
 
-/* ===== 通用组件：Drawer / Switch / Segmented / Tooltip / Accordion ===== */
-.ui-drawer-layer {
-  position: fixed;
-  inset: 0;
-  z-index: 120;
-}
-
-.ui-drawer-mask {
-  position: absolute;
-  inset: 0;
-  background: var(--backdrop);
-  animation: uiDrawerMaskIn 150ms var(--ease);
-}
-
-.ui-drawer-layer.closing .ui-drawer-mask {
-  animation: uiDrawerMaskOut 120ms var(--ease) forwards;
-}
-
-.ui-drawer-panel {
-  position: absolute;
-  top: 0;
-  right: 0;
-  height: 100%;
-  width: min(600px, 94vw);
-  display: flex;
-  flex-direction: column;
-  background: var(--surface);
-  border-left: 1px solid var(--border);
-  box-shadow: var(--shadow-toast);
-  animation: uiDrawerIn 200ms var(--ease);
-}
-
-.ui-drawer-layer.closing .ui-drawer-panel {
-  animation: uiDrawerOut 140ms var(--ease) forwards;
-}
-
-@keyframes uiDrawerMaskIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes uiDrawerMaskOut {
-  from { opacity: 1; }
-  to { opacity: 0; }
-}
-
-@keyframes uiDrawerIn {
-  from { transform: translateX(100%); }
-  to { transform: translateX(0); }
-}
-
-@keyframes uiDrawerOut {
-  from { transform: translateX(0); }
-  to { transform: translateX(100%); }
-}
-
-.ui-drawer-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border-bottom: 1px solid var(--border);
-  padding: 16px 18px;
-}
-
-.ui-drawer-head h3 {
-  margin: 0;
-  font-size: 16px;
-}
-
-.ui-drawer-close {
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  color: var(--muted);
-  cursor: pointer;
-}
-
-.ui-drawer-body {
-  flex: 1;
-  overflow: auto;
-  padding: 18px;
-}
-
-.ui-drawer-foot {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  border-top: 1px solid var(--border);
-  padding: 14px 18px;
-}
-
-.ui-switch {
-  width: 40px;
-  height: 22px;
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  background: var(--surface-muted);
-  position: relative;
-  padding: 0;
-  cursor: pointer;
-  transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
-}
-
-.ui-switch span {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: var(--shadow-pressed);
-  transition: transform var(--dur-fast) var(--ease);
-}
-
-.ui-switch.on {
-  background: var(--primary);
-  border-color: var(--primary);
-}
-
-.ui-switch.on span {
-  transform: translateX(18px);
-}
-
-.ui-radio-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.ui-radio {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-  color: var(--text);
-}
-
-.ui-segmented {
-  display: inline-flex;
-  gap: 3px;
-  padding: 3px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--surface-muted);
-}
-
-.ui-segmented button {
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  border-radius: var(--radius-xs);
-  padding: 6px 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
-    box-shadow var(--dur-fast) var(--ease);
-}
-
-.ui-segmented button.active {
-  background: var(--surface);
-  color: var(--primary);
-  box-shadow: var(--shadow-pressed);
-}
-
+/* ===== 通用组件：Tooltip ===== */
 .ui-tooltip-wrap {
   position: relative;
   display: inline-flex;
@@ -2771,14 +2674,14 @@ tbody tr:hover {
   position: absolute;
   bottom: calc(100% + 8px);
   left: 50%;
-  z-index: 60;
+  z-index: var(--z-tooltip);
   transform: translateX(-50%) translateY(2px);
   white-space: nowrap;
   background: var(--text);
   color: var(--bg);
   padding: 6px 10px;
   border-radius: var(--radius-xs);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
@@ -2798,99 +2701,7 @@ tbody tr:hover {
   transform: translateX(-50%) translateY(0);
 }
 
-.ui-accordion {
-  overflow: hidden;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-}
-
-.ui-accordion-item + .ui-accordion-item {
-  border-top: 1px solid var(--border);
-}
-
-.ui-accordion-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  width: 100%;
-  border: 0;
-  background: var(--surface);
-  color: var(--text);
-  padding: 12px 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color var(--dur-fast) var(--ease);
-}
-
-.ui-accordion-head:hover {
-  background: var(--surface-muted);
-}
-
-.ui-accordion-icon {
-  transition: transform var(--dur-fast) var(--ease);
-}
-
-.ui-accordion-item.open .ui-accordion-icon {
-  transform: rotate(45deg);
-}
-
-.ui-accordion-body {
-  max-height: 0;
-  overflow: hidden;
-  padding: 0 14px;
-  color: var(--muted);
-  font-size: 13px;
-  transition: max-height var(--dur) var(--ease), padding var(--dur) var(--ease);
-}
-
-.ui-accordion-item.open .ui-accordion-body {
-  max-height: 40rem;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 0 14px 12px;
-}
-
-/* ===== 通用组件：Steps / Timeline / Tree / Kanban / Upload / Batch / Dropdown / Dental ===== */
-.ui-steps {
-  display: flex;
-  gap: 6px;
-  align-items: flex-start;
-}
-
-.ui-step {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  padding: 4px 2px;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.ui-step-dot {
-  width: 26px;
-  height: 26px;
-  display: grid;
-  place-items: center;
-  border: 2px solid var(--border-strong);
-  border-radius: 50%;
-  background: var(--surface);
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.ui-step.active { color: var(--primary); }
-.ui-step.active .ui-step-dot { border-color: var(--primary); background: var(--soft); color: var(--primary); }
-.ui-step.done { color: var(--success); }
-.ui-step.done .ui-step-dot { border-color: var(--success); background: var(--success-soft); color: var(--success); }
-
+/* ===== 通用组件：Steps / Timeline / Tree / Kanban / Upload / Batch / Dental ===== */
 .ui-timeline {
   display: grid;
   gap: 14px;
@@ -2925,9 +2736,9 @@ tbody tr:hover {
 
 .ui-timeline-item.done .ui-timeline-dot { background: var(--success); }
 .ui-timeline-item.current .ui-timeline-dot { background: var(--primary); box-shadow: 0 0 0 4px var(--soft); }
-.ui-timeline-item strong { display: block; font-size: 13px; }
-.ui-timeline-item p { margin: 4px 0; color: var(--muted); font-size: 12px; }
-.ui-timeline-item span { color: var(--muted); font-size: 12px; }
+.ui-timeline-item strong { display: block; font-size: var(--fs-base); }
+.ui-timeline-item p { margin: 4px 0; color: var(--muted); font-size: var(--fs-sm); }
+.ui-timeline-item span { color: var(--muted); font-size: var(--fs-sm); }
 
 .ui-tree { display: grid; gap: 2px; }
 .ui-tree-children { margin-left: 16px; }
@@ -2950,21 +2761,21 @@ tbody tr:hover {
   border: 0;
   background: transparent;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   line-height: 1;
   cursor: pointer;
   transition: color var(--dur-fast) var(--ease);
 }
 .ui-tree-toggle:hover { background: transparent; color: var(--primary); }
 .ui-tree-label { flex: 1; }
-.ui-tree-meta { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.ui-tree-meta { color: var(--muted); font-size: var(--fs-sm); white-space: nowrap; }
 .ui-tree-action {
   border: 0;
   background: var(--primary);
-  color: #fff;
+  color: var(--on-primary);
   border-radius: var(--radius-xs);
   padding: 4px 10px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   cursor: pointer;
 }
 .ui-tree-action:hover { background: var(--primary-hover); }
@@ -2980,7 +2791,7 @@ tbody tr:hover {
   align-content: start;
   gap: 8px;
   min-height: 160px;
-  padding: 10px;
+  padding: var(--card-pad-compact);
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -2992,11 +2803,12 @@ tbody tr:hover {
   background: var(--soft);
 }
 
-.ui-kanban-head { display: flex; justify-content: space-between; padding: 2px; font-size: 13px; }
+.ui-kanban-head { display: flex; justify-content: space-between; padding: 2px; font-size: var(--fs-base); }
 .ui-kanban-head span { color: var(--muted); }
-.ui-kanban-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow); padding: 10px 12px; cursor: grab; }
-.ui-kanban-card strong { display: block; font-size: 13px; }
-.ui-kanban-card span { color: var(--muted); font-size: 12px; }
+.ui-kanban-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow); padding: var(--card-pad-compact); cursor: grab; }
+.ui-kanban-card:hover { border-color: var(--primary); background: var(--soft); }
+.ui-kanban-card strong { display: block; font-size: var(--fs-base); }
+.ui-kanban-card span { color: var(--muted); font-size: var(--fs-sm); }
 .ui-kanban-card .kanban-actions {
   display: flex;
   flex-wrap: wrap;
@@ -3005,44 +2817,25 @@ tbody tr:hover {
 }
 .ui-kanban-card .kanban-actions button {
   padding: 4px 8px;
-  font-size: 12px;
+  font-size: var(--fs-sm);
   border-radius: var(--radius-xs);
 }
 
 .ui-upload-list { display: grid; gap: 8px; }
-.ui-upload-item { display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; }
+.ui-upload-item { display: flex; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: var(--card-pad-compact); }
 .ui-upload-thumb { width: 38px; height: 38px; display: grid; place-items: center; flex-shrink: 0; background: var(--surface-muted); border-radius: var(--radius-xs); overflow: hidden; }
 .ui-upload-thumb img { width: 100%; height: 100%; object-fit: cover; }
 .ui-upload-meta { flex: 1; min-width: 0; }
-.ui-upload-meta strong { display: block; font-size: 12px; }
-.ui-upload-meta span { color: var(--muted); font-size: 11px; }
-.ui-upload-remove { border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 16px; }
+.ui-upload-meta strong { display: block; font-size: var(--fs-sm); }
+.ui-upload-meta span { color: var(--muted); font-size: var(--fs-xs); }
+.ui-upload-remove { border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: var(--fs-lg); }
 
 .ui-batch-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--soft); border: 1px solid var(--primary); border-radius: var(--radius-sm); padding: 8px 12px; }
-.ui-batch-count { color: var(--primary); font-weight: 600; font-size: 12px; }
-
-.ui-dropdown { position: relative; display: inline-flex; }
-.ui-dropdown-trigger { display: inline-flex; align-items: center; gap: 6px; background: var(--surface); color: var(--text); border: 1px solid var(--border-strong); border-radius: var(--radius-sm); padding: 8px 12px; font-weight: 600; cursor: pointer; transition: background-color var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease); }
-.ui-dropdown-trigger:hover { background: var(--surface-muted); border-color: var(--primary); color: var(--primary); }
-.ui-dropdown-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 50; display: grid; gap: 2px; min-width: 150px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow-hover); padding: 6px; transform-origin: top left; animation: uiMenuIn 140ms var(--ease); }
-.ui-dropdown-menu.closing { animation: uiMenuOut 120ms var(--ease) forwards; pointer-events: none; }
-.ui-dropdown-menu button { display: flex; width: 100%; border: 0; background: transparent; color: var(--text); padding: 8px 10px; border-radius: var(--radius-xs); text-align: left; cursor: pointer; }
-.ui-dropdown-menu button:hover { background: var(--soft); color: var(--primary); }
-.ui-dropdown-menu button.danger { color: var(--danger); }
-
-@keyframes uiMenuIn {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes uiMenuOut {
-  from { opacity: 1; transform: translateY(0); }
-  to { opacity: 0; transform: translateY(-4px); }
-}
+.ui-batch-count { color: var(--primary); font-weight: 600; font-size: var(--fs-sm); }
 
 .ui-dental-chart { display: grid; gap: 6px; }
 .ui-tooth-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
-.ui-tooth { min-width: 0; height: 34px; border: 1px solid var(--border-strong); border-radius: 6px 6px 10px 10px; background: var(--surface); color: var(--muted); font-size: 11px; cursor: pointer; }
+.ui-tooth { min-width: 0; height: 34px; border: 1px solid var(--border-strong); border-radius: 6px 6px 10px 10px; background: var(--surface); color: var(--muted); font-size: var(--fs-xs); cursor: pointer; }
 .ui-tooth-grid.lower .ui-tooth { border-radius: 10px 10px 6px 6px; }
 .ui-tooth:hover { border-color: var(--primary); color: var(--primary); }
 .ui-tooth.selected { border-color: var(--primary); background: var(--soft); color: var(--primary); font-weight: 700; }
@@ -3054,7 +2847,7 @@ tbody tr:hover {
   gap: 14px;
   margin: 10px 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--fs-sm);
   flex-wrap: wrap;
 }
 .dental-legend i {
@@ -3086,7 +2879,7 @@ tbody tr:hover {
   background: var(--soft);
   color: var(--primary);
   font-weight: 700;
-  font-size: 13px;
+  font-size: var(--fs-base);
 }
 .dental-mark-fields {
   display: flex;
@@ -3094,47 +2887,50 @@ tbody tr:hover {
   align-items: center;
   flex-wrap: wrap;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--fs-base);
 }
 
-/* ===== 通用组件：MultiSelect / DateRange / Progress / Badge ===== */
-.ui-multiselect { position: relative; min-width: 0; }
-.ui-multiselect-input {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  min-height: 38px;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--surface);
-  padding: 6px 8px;
-  cursor: pointer;
-}
-.ui-chip { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; background: var(--soft); color: var(--primary); padding: 4px 9px; font-size: 12px; font-weight: 600; }
-.ui-multiselect-placeholder { color: var(--muted-weak); font-size: 12px; }
-.ui-multiselect-menu { position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 50; display: grid; gap: 2px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow-hover); padding: 6px; transform-origin: top center; animation: uiMenuIn 140ms var(--ease); }
-.ui-multiselect-menu.closing { animation: uiMenuOut 120ms var(--ease) forwards; pointer-events: none; }
-.ui-multiselect-search { width: 100%; margin-bottom: 4px; }
-.ui-multiselect-option { display: flex; align-items: center; gap: 8px; border-radius: var(--radius-xs); padding: 8px 9px; cursor: pointer; }
-.ui-multiselect-option:hover { background: var(--surface-muted); }
-
-.ui-date-range { display: flex; align-items: center; gap: 8px; }
-.ui-date-range input { flex: 1; min-width: 0; }
-.ui-date-range-sep { color: var(--muted-weak); }
-
-.ui-progress { height: 8px; overflow: hidden; border-radius: 999px; background: var(--border-soft); }
-.ui-progress-fill { height: 100%; border-radius: 999px; background: var(--primary); transition: width var(--dur) var(--ease); }
+/* ===== 通用组件：Progress / Badge ===== */
+.ui-progress { height: 8px; overflow: hidden; border-radius: var(--radius-pill); background: var(--border-soft); }
+.ui-progress-fill { height: 100%; border-radius: var(--radius-pill); background: var(--primary); transition: width var(--dur) var(--ease); }
 .ui-progress-fill.success { background: var(--success); }
 .ui-progress-fill.warning { background: var(--warning); }
 .ui-progress-fill.danger { background: var(--danger); }
 
-.ui-badge { display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; padding: 3px 9px; font-size: 12px; font-weight: 600; }
+.ui-badge { display: inline-flex; align-items: center; gap: 5px; border-radius: var(--radius-pill); padding: 3px 9px; font-size: var(--fs-sm); font-weight: 600; }
 .ui-badge.neutral { background: var(--surface-muted); color: var(--muted); }
 .ui-badge.primary { background: var(--soft); color: var(--primary); }
 .ui-badge.success { background: var(--success-soft); color: var(--success); }
 .ui-badge.warning { background: var(--warning-soft); color: var(--warning); }
 .ui-badge.danger { background: var(--danger-soft); color: var(--danger); }
+
+/* ===== 阶段 5：滚动条统一（亮/暗均走 token，细轨 + 圆角拇指） ===== */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--radius-pill);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-weak);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
 
 /* ===== 无障碍：系统开启"减弱动态效果"时动画瞬间完成（保留淡入淡出终态） ===== */
 @media (prefers-reduced-motion: reduce) {

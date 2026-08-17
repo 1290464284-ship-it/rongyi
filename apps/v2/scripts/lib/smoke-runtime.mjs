@@ -33,6 +33,15 @@ export function isPortFree(port) {
   });
 }
 
+/** 在 [min, max] 区间内探测一个空闲端口；全部占用时抛错（避免静默复用被占端口造成假红）。 */
+export async function pickFreePort(min, max, attempts = 40) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const port = min + Math.floor(Math.random() * (max - min + 1));
+    if (await isPortFree(port)) return port;
+  }
+  throw new Error(`no free port found in range ${min}-${max}`);
+}
+
 /** 结束进程树（Windows taskkill /T /F，POSIX 按负 PID 组发 SIGTERM）。 */
 export function stopProcessTree(pid) {
   if (!pid || typeof pid !== 'number') return;

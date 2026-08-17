@@ -1,7 +1,6 @@
-import { useState, type FormEvent } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useRef, useState, type FormEvent } from 'react';
 import { apiRequest } from '../lib/api';
-import { Dialog } from '../components';
+import { Dialog, DoctorSelect } from '../components';
 import { errorMessage } from '../lib/messages';
 import { useToast } from '../lib/toast-context';
 import { rowPatientName, type RegistrationRow } from './types';
@@ -18,10 +17,6 @@ export function RecordDialog({
   const { showToast } = useToast();
   const patientId = String(row.patientId ?? '');
   const patientName = rowPatientName(row);
-  const doctors = useQuery({
-    queryKey: ['workbench', 'doctors'],
-    queryFn: () => apiRequest<Array<Record<string, unknown>>>('/doctors'),
-  });
   const [doctorId, setDoctorId] = useState('');
   const [category, setCategory] = useState('');
   const [status, setStatus] = useState('DRAFT');
@@ -29,13 +24,16 @@ export function RecordDialog({
   const [diagnosis, setDiagnosis] = useState('');
   const [treatmentPlan, setTreatmentPlan] = useState('');
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (busyRef.current) return;
     if (!doctorId) {
       showToast('请选择医生', 'error');
       return;
     }
+    busyRef.current = true;
     setBusy(true);
     try {
       await apiRequest('/resources/medicalRecords', {
@@ -58,6 +56,7 @@ export function RecordDialog({
     } catch (error) {
       showToast(errorMessage(error, '创建病历失败'), 'error');
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   }
@@ -69,15 +68,7 @@ export function RecordDialog({
           患者
           <input readOnly value={patientName} aria-label="患者" />
         </label>
-        <label>
-          医生
-          <select value={doctorId} onChange={(event) => setDoctorId(event.target.value)}>
-            <option value="">选择医生</option>
-            {doctors.data?.map((doctor) => (
-              <option key={String(doctor.id)} value={String(doctor.id)}>{String(doctor.name ?? doctor.id)}</option>
-            ))}
-          </select>
-        </label>
+        <DoctorSelect label="医生" value={doctorId} onChange={setDoctorId} />
         <label>
           分类
           <input value={category} onChange={(event) => setCategory(event.target.value)} />

@@ -112,7 +112,7 @@ export function QuerySection<T>({
       <div className="query-section-error">
         <p className="error">该区块加载失败</p>
         <PageError message={errorMessage(query.error, '数据加载失败')} />
-        <button type="button" onClick={() => void query.refetch()}>重试</button>
+        <button type="button" className="btn-secondary" onClick={() => void query.refetch()}>重试</button>
       </div>
     );
   }

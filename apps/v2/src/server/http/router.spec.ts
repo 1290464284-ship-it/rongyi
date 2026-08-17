@@ -256,6 +256,19 @@ describe('resource router', () => {
       .expect(403);
   });
 
+  it('forbids resources whose module permission was revoked for the user', async () => {
+    // 角色允许（DOCTOR 可访问 patients），但显式 UserPermission 覆盖撤回了 patients 模块权限。
+    db.prepare(
+      `INSERT INTO UserPermission (userId, permission, allowed, clinicId, createdAt, updatedAt, deletedAt)
+       VALUES ('user-router-doctor', 'patients', 0, 'clinic-v2-001', ?, ?, NULL)`,
+    ).run(now, now);
+    const res = await request(app)
+      .get('/api/v2/resources/patients')
+      .set('Authorization', `Bearer ${receptionToken}`)
+      .expect(403);
+    expect(res.body.code).toBe('FORBIDDEN');
+  });
+
   it('blocks fee and status edits on billed treatment plans', async () => {
     const planId = 'router-plan-locked-fields';
     const nowIso = new Date().toISOString();
@@ -304,6 +317,43 @@ describe('resource router', () => {
       .expect(200);
     expect(exported.text).not.toContain('110101199001011234');
     expect(exported.text).toMatch(/\*{8}1234/);
+  });
+
+  it('masks idCard in patient lists but keeps the full value on the detail endpoint', async () => {
+    await request(app)
+      .post('/api/v2/resources/patients')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        code: 'LIST-IDCARD',
+        name: 'List IdCard Patient',
+        gender: 'UNKNOWN',
+        phone: '13600008888',
+        idCard: '110101199001011234',
+        source: 'OTHER',
+        active: true,
+      })
+      .expect(201);
+    // 列表：身份证掩码（保留尾号），不泄露完整号
+    const list = await request(app)
+      .get('/api/v2/resources/patients?code=LIST-IDCARD')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    const listed = (list.body.data.items as Array<{ id: string; idCard: string | null }>)
+      .find((row) => row.idCard !== null);
+    expect(listed).toBeDefined();
+    expect(listed!.idCard).toBe('********1234');
+    // 非患者资源不做列表掩码（maskListRow 空表分支）
+    const suppliers = await request(app)
+      .get('/api/v2/resources/suppliers?page=1&pageSize=1')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(suppliers.body.data.items).toBeInstanceOf(Array);
+    // 详情：完整值供编辑回填（编辑路径数据源）
+    const detail = await request(app)
+      .get(`/api/v2/resources/patients/${String(listed!.id)}`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200);
+    expect(detail.body.data.idCard).toBe('110101199001011234');
   });
 
   it('ends an export response when streaming fails after headers', async () => {

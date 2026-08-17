@@ -1,17 +1,10 @@
+import { formatDateTime, toLocalInput } from '../lib/format';
 import { PHASE_LABELS } from './constants';
 import type { ImagingCategoryRow, ImagingRow } from './types';
 
-export function formatDateTime(value?: string | null): string {
-  return value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '';
-}
-
-export function toLocalDatetime(value: unknown): string {
-  if (!value) return '';
-  const date = new Date(String(value));
-  if (Number.isNaN(date.getTime())) return '';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
+// 与 lib/format 同口径（行为差异仅限无效日期：lib 版原样返回而非 "Invalid Date"）。
+export { formatDateTime };
+export { toLocalInput as toLocalDatetime };
 
 export function phaseLabel(phase?: string | null): string {
   if (!phase) return '';

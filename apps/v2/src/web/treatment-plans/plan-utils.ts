@@ -7,7 +7,7 @@ export function newItem(): PlanItemForm {
 }
 
 export function emptyPlanForm(): TreatmentPlanForm {
-  return { patientId: '', doctorId: '', name: '', status: 'APPROVED', totalFee: '', remark: '', items: [newItem()] };
+  return { patientId: '', doctorId: '', name: '', status: 'APPROVED', totalFee: '', totalFeeConfirmed: false, remark: '', items: [newItem()] };
 }
 
 function buildItemPayload(item: PlanItemForm): ValidPlanItem {
@@ -50,6 +50,7 @@ export async function updatePlanWithItems(form: TreatmentPlanForm, planId: strin
       name: form.name.trim(),
       status: form.status,
       totalFee: toCents(form.totalFee) || calculatedFee,
+      totalFeeConfirmed: Boolean(form.totalFeeConfirmed),
       remark: form.remark || undefined,
       items: validEntries.map((entry) => ({
         id: entry.id || undefined,

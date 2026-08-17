@@ -31,12 +31,11 @@ export function CompareResultView({ result }: { result: CephalometricCompareResu
               <polyline
                 points={entry.points.map((p) => `${p.x},${p.y}`).join(' ')}
                 fill="none"
-                stroke={entry.color}
-                strokeWidth={1.5}
+                style={{ stroke: entry.color, strokeWidth: 1.5 }}
               />
             )}
             {entry.points.map((point, index) => (
-              <circle key={index} cx={point.x} cy={point.y} r={2.5} fill={entry.color} />
+              <circle key={index} cx={point.x} cy={point.y} r={2.5} style={{ fill: entry.color }} />
             ))}
           </g>
         ))}

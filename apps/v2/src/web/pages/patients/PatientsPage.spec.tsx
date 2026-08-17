@@ -112,6 +112,8 @@ describe('PatientsPage', () => {
   it('edits and deletes a patient', async () => {
     vi.mocked(apiRequest)
       .mockResolvedValueOnce(patientList)
+      // 编辑打开时 onEditLoad 从详情接口拉取完整值（列表 idCard 已掩码）
+      .mockResolvedValueOnce({ ...patientList.items[0], idCard: '110101199001011234' })
       .mockResolvedValueOnce({ items: [], total: 0, page: 1, pageSize: 10 })
       .mockResolvedValueOnce({ id: 'p1' })
       .mockResolvedValueOnce(patientList);
@@ -119,12 +121,16 @@ describe('PatientsPage', () => {
     await screen.findByText('张三');
 
     fireEvent.click(screen.getByText('编辑'));
-    fireEvent.change(screen.getByLabelText('姓名'), { target: { value: '张三改' } });
+    // 详情加载完成后按钮才从「加载中...」恢复为「保存」
+    fireEvent.change(await screen.findByLabelText('姓名'), { target: { value: '张三改' } });
+    expect((screen.getByLabelText('身份证号') as HTMLInputElement).value).toBe('110101199001011234');
     fireEvent.click(screen.getByText('保存'));
     await waitFor(() => {
       expect(apiRequest).toHaveBeenCalledWith('/resources/patients/p1', expect.objectContaining({ method: 'PATCH' }));
     });
-    const updateCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/resources/patients/p1');
+    const updateCall = vi.mocked(apiRequest).mock.calls.find(
+      ([path, init]) => path === '/resources/patients/p1' && (init as RequestInit | undefined)?.method === 'PATCH',
+    );
     expect(JSON.parse(String(updateCall?.[1]?.body))).toMatchObject({
       name: '张三改',
       phone: '13800000000',
@@ -146,6 +152,7 @@ describe('PatientsPage', () => {
   it('prefills multiline fields when editing', async () => {
     vi.mocked(apiRequest)
       .mockResolvedValueOnce(patientList)
+      .mockResolvedValueOnce({ ...patientList.items[0], idCard: '110101199001011234' })
       .mockResolvedValueOnce({ items: [], total: 0, page: 1, pageSize: 10 })
       .mockResolvedValueOnce({ id: 'p1' })
       .mockResolvedValueOnce(patientList);
@@ -153,6 +160,7 @@ describe('PatientsPage', () => {
     await screen.findByText('张三');
 
     fireEvent.click(screen.getByText('编辑'));
+    await screen.findByText('保存');
     expect((screen.getByLabelText('过敏史（每行一条）') as HTMLTextAreaElement).value).toBe('青霉素');
     expect((screen.getByLabelText('患者编号') as HTMLInputElement).value).toBe('P001');
     fireEvent.change(screen.getByLabelText('过敏史（每行一条）'), { target: { value: '青霉素\n阿司匹林' } });
@@ -160,7 +168,9 @@ describe('PatientsPage', () => {
     await waitFor(() => {
       expect(apiRequest).toHaveBeenCalledWith('/resources/patients/p1', expect.objectContaining({ method: 'PATCH' }));
     });
-    const updateCall = vi.mocked(apiRequest).mock.calls.find(([path]) => path === '/resources/patients/p1');
+    const updateCall = vi.mocked(apiRequest).mock.calls.find(
+      ([path, init]) => path === '/resources/patients/p1' && (init as RequestInit | undefined)?.method === 'PATCH',
+    );
     expect(JSON.parse(String(updateCall?.[1]?.body))).toMatchObject({
       allergies: ['青霉素', '阿司匹林'],
     });
@@ -170,6 +180,7 @@ describe('PatientsPage', () => {
   it('excludes the edited patient from duplicate checks', async () => {
     vi.mocked(apiRequest)
       .mockResolvedValueOnce(patientList)
+      .mockResolvedValueOnce({ ...patientList.items[0], idCard: '110101199001011234' })
       .mockResolvedValueOnce(patientList)
       .mockResolvedValueOnce({ id: 'p1' })
       .mockResolvedValueOnce(patientList);
@@ -177,6 +188,7 @@ describe('PatientsPage', () => {
     await screen.findByText('张三');
 
     fireEvent.click(screen.getByText('编辑'));
+    await screen.findByText('保存');
     fireEvent.click(screen.getByText('保存'));
     await waitFor(() => {
       expect(apiRequest).toHaveBeenCalledWith('/resources/patients/p1', expect.objectContaining({ method: 'PATCH' }));

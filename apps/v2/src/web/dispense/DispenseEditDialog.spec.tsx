@@ -269,8 +269,10 @@ describe('DispenseEditDialog', () => {
       return {};
     });
     render(<DispenseEditDialog dispenseId="d-1" onClose={vi.fn()} onDone={vi.fn()} />, { wrapper });
+    // 等物品下拉加载出真实选项（药品甲）再断言：value 非空时 MissingSelectOption
+    // 会先渲染占位 option（文本为 id），不能以 options.length 判断加载完成。
     await waitFor(() => {
-      expect((screen.getByLabelText('编辑患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
+      expect(screen.getByRole('option', { name: '药品甲' })).toBeDefined();
     });
     expect(screen.queryByLabelText('编辑批次')).toBeNull();
   });

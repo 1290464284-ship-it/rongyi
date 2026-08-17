@@ -165,7 +165,7 @@ describe('BackupsPage', () => {
     fail = false;
     fireEvent.click(screen.getByRole('button', { name: '重试' }));
     fireEvent.click(await screen.findByRole('button', { name: '创建备份' }));
-    fireEvent.click(screen.getByRole('button', { name: '创建备份' }));
+    fireEvent.click(screen.getByRole('button', { name: '创建中...' }));
 
     const createCalls = vi.mocked(apiRequest).mock.calls.filter(
       ([path, options]) => path === '/backups' && (options as RequestInit)?.method === 'POST',
@@ -175,7 +175,7 @@ describe('BackupsPage', () => {
     expect(await screen.findByText('备份已创建：backup-1.sqlite')).toBeDefined();
 
     fireEvent.click(screen.getByRole('button', { name: '校验' }));
-    fireEvent.click(screen.getByRole('button', { name: '校验' }));
+    fireEvent.click(screen.getByRole('button', { name: '校验中...' }));
     const verifyCalls = vi.mocked(apiRequest).mock.calls.filter(([path]) => path === '/backups/backup-1.sqlite/verify');
     expect(verifyCalls).toHaveLength(1);
     resolveVerify?.({ integrity: 'corrupt' });
@@ -235,8 +235,9 @@ describe('BackupsPage', () => {
       return {};
     });
     render(<BackupsPage />, { wrapper });
+    // 先打开暂存确认框，再触发创建（busy），此时确认按钮走 confirmStageRestore 的 busy 守卫
+    fireEvent.click(await screen.findByRole('button', { name: '暂存恢复' }));
     fireEvent.click(await screen.findByRole('button', { name: '创建备份' }));
-    fireEvent.click(screen.getByRole('button', { name: '暂存恢复' }));
     fireEvent.click(screen.getByRole('button', { name: '确认' }));
     expect(apiRequest).not.toHaveBeenCalledWith('/backups/backup-1.sqlite/restore', expect.anything());
     resolveCreate?.({ filename: 'backup-1.sqlite', encrypted: false });
@@ -255,8 +256,9 @@ describe('BackupsPage', () => {
       return {};
     });
     render(<BackupsPage />, { wrapper });
+    // 先打开清理确认框，再触发创建（busy），此时确认按钮走 confirmCleanup 的 busy 守卫
+    fireEvent.click(await screen.findByRole('button', { name: '清理备份（保留 30 个）' }));
     fireEvent.click(await screen.findByRole('button', { name: '创建备份' }));
-    fireEvent.click(screen.getByRole('button', { name: '清理备份（保留 30 个）' }));
     fireEvent.click(screen.getByRole('button', { name: '确认' }));
     expect(apiRequest).not.toHaveBeenCalledWith('/backups/cleanup', expect.anything());
     resolveCreate?.({ filename: 'backup-1.sqlite', encrypted: false });

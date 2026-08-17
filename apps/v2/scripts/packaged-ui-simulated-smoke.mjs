@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { _electron as electron } from '@playwright/test';
 import { resolveSimulatedDataDir } from './simulated-data.mjs';
+import { SIM_ADMIN_PASSWORD } from './lib/sim-admin.mjs';
 
 const appRoot = path.resolve(import.meta.dirname, '..');
 const exePath = path.join(appRoot, 'release-v2', 'win-unpacked', 'Dental Clinic V2.exe');
@@ -43,7 +44,7 @@ const appDataDir = path.join(userDataDir, 'data');
 fs.mkdirSync(appDataDir, { recursive: true });
 // 模拟库管理员密码固定为 v2-sim-admin-password（simulate-clinic-data.ts
 // 硬编码）；本 smoke 复制模拟库，登录必须用固定口令（同 disaster-drill）。
-const adminPassword = 'v2-sim-admin-password';
+const adminPassword = SIM_ADMIN_PASSWORD;
 for (const suffix of ['', '-wal', '-shm']) {
   const source = path.join(sourceSimDir, `v2.sqlite${suffix}`);
   if (fs.existsSync(source)) fs.copyFileSync(source, path.join(appDataDir, `v2.sqlite${suffix}`));

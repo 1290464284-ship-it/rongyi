@@ -2,10 +2,10 @@ import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
 import type { Page } from '../../lib/types';
-import { LoadingState, PageError } from '../../components';
+import { KanbanBoard, LoadingState, PageError, type KanbanColumn } from '../../components';
 import { errorMessage } from '../../lib/messages';
 import { useToast } from '../../lib/toast-context';
-import { todayLocalDate } from '../../lib/format';
+import { todayLocalDate, formatDateTime } from '../../lib/format';
 import { APPOINTMENT_STATUS_LABELS } from '../../lib/labels';
 
 // 与 AppointmentsPage 共用同一字典（M-03），文案保持"已到诊/未到诊"一致。
@@ -21,11 +21,14 @@ type AppointmentRow = Record<string, unknown> & {
   status?: string | null;
 };
 
+/** B2：卡片时间与预约列表同口径（本地化完整时间），不再直渲 ISO 原文 */
+function boardTime(value?: string | null): string {
+  return formatDateTime(value);
+}
+
 export function AppointmentBoardPage() {
   const { showToast } = useToast();
   const [date, setDate] = useState(todayLocalDate());
-  const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   const [inFlightIds, setInFlightIds] = useState<ReadonlySet<string>>(new Set());
   const inFlightRef = useRef<Set<string>>(new Set());
   const query = useQuery({
@@ -71,14 +74,40 @@ export function AppointmentBoardPage() {
     }
   }
 
-  async function handleDrop(statusKey: string) {
-    const id = draggingId;
-    setDraggingId(null);
-    setDragOverColumn(null);
-    if (!id) return;
-    const row = rows.find((entry) => entry.id === id);
-    if (!row || String(row.status) === statusKey) return;
-    await transition(id, statusKey);
+  // A5：看板渲染统一到 KanbanBoard 组件（拖拽 + 方向键键盘移动 + role/aria 语义）
+  const columns: KanbanColumn[] = BOARD_STATUSES.map((status) => ({
+    id: status.key,
+    title: status.label,
+    cards: rows
+      .filter((row) => String(row.status ?? '') === status.key)
+      .map((row) => ({
+        id: row.id,
+        title: String(row.patientIdLabel ?? row.patientId ?? '未填写患者'),
+        subtitle: `${String(row.doctorIdLabel ?? row.doctorId ?? '未分配医生')} · ${boardTime(row.startTime)}`,
+        footer: (
+          <select
+            key={`${row.id}-${row.status}`}
+            value=""
+            aria-label={`${status.label}状态`}
+            disabled={stale || inFlightIds.has(row.id)}
+            onChange={(event) => event.target.value && transition(row.id, event.target.value)}
+          >
+            <option value="">变更状态</option>
+            {BOARD_STATUSES.map((next) => (
+              <option key={next.key} value={next.key}>{next.label}</option>
+            ))}
+          </select>
+        ),
+      })),
+  }));
+
+  function handleBoardChange(next: KanbanColumn[]) {
+    /* v8 ignore next -- 看板在 stale 期间由页面 aria-busy 标记，移动回调直接忽略 */
+    if (stale) return;
+    const moved = next
+      .flatMap((column) => column.cards.map((card) => ({ id: card.id, status: column.id })))
+      .find(({ id, status }) => status !== String(rows.find((row) => row.id === id)?.status ?? ''));
+    if (moved) void transition(moved.id, moved.status);
   }
 
   return (
@@ -95,67 +124,7 @@ export function AppointmentBoardPage() {
           </div>
         ))}
       </div>
-      <div className="board">
-        {BOARD_STATUSES.map((status) => (
-          <section
-            className={`board-column${dragOverColumn === status.key ? ' drag-over' : ''}`}
-            data-status={status.key}
-            key={status.key}
-            onDragOver={(event) => {
-              if (stale) return;
-              event.preventDefault();
-              setDragOverColumn(status.key);
-            }}
-            onDragLeave={() => setDragOverColumn((current) => (current === status.key ? null : current))}
-            onDrop={(event) => {
-              if (stale) return;
-              event.preventDefault();
-              void handleDrop(status.key);
-            }}
-          >
-            <header>
-              <span>{status.label}</span>
-              <strong>{countFor(status.key)}</strong>
-            </header>
-            {rows
-              .filter((row) => String(row.status ?? '') === status.key)
-              .map((row) => (
-                <article
-                  className={`board-card${draggingId === row.id ? ' dragging' : ''}`}
-                  draggable={!stale}
-                  data-id={row.id}
-                  key={row.id}
-                  onDragStart={(event) => {
-                    if (stale) return;
-                    event.dataTransfer?.setData('text/plain', row.id);
-                    setDraggingId(row.id);
-                  }}
-                  onDragEnd={() => {
-                    setDraggingId(null);
-                    setDragOverColumn(null);
-                  }}
-                >
-                  <strong>{String(row.patientIdLabel ?? row.patientId ?? '未填写患者')}</strong>
-                  <span>{String(row.doctorIdLabel ?? row.doctorId ?? '未分配医生')}</span>
-                  <time>{String(row.startTime ?? '')}</time>
-                  <select
-                    key={`${row.id}-${row.status}`}
-                    value=""
-                    aria-label={`${status.label}状态`}
-                    disabled={stale || inFlightIds.has(row.id)}
-                    onChange={(event) => event.target.value && transition(row.id, event.target.value)}
-                  >
-                    <option value="">变更状态</option>
-                    {BOARD_STATUSES.map((next) => (
-                      <option key={next.key} value={next.key}>{next.label}</option>
-                    ))}
-                  </select>
-                </article>
-              ))}
-            {countFor(status.key) === 0 && <p className="empty-board">暂无预约</p>}
-          </section>
-        ))}
-      </div>
+      <KanbanBoard columns={columns} onChange={handleBoardChange} />
     </div>
   );
 }

@@ -47,11 +47,8 @@ export function createResourceRouter(db: Database.Database): Router {
       return;
     }
     const requiredPermission = RESOURCE_PERMISSION_MAP[resource.name];
-/* v8 ignore next */
     if (requiredPermission && req.context.permissions && !req.context.permissions.includes(requiredPermission)) {
-/* v8 ignore next */
       next(new AppError('FORBIDDEN', `Forbidden resource: ${req.params.resource}`, 403));
-/* v8 ignore next */
       return;
     }
     res.locals.resource = resource;
@@ -73,7 +70,11 @@ export function createResourceRouter(db: Database.Database): Router {
         sortBy: typeof req.query.sortBy === 'string' ? req.query.sortBy : undefined,
         sortOrder: req.query.sortOrder === 'ASC' ? 'ASC' : 'DESC',
       }, req.context!);
-      res.json({ success: true, data: result });
+      // 列表响应按资源做业务 PII 掩码（身份证保留尾号；完整值走详情/编辑接口）
+      const items = Array.isArray(result.items)
+        ? result.items.map((row) => maskListRow(resource.name, row))
+        : result.items;
+      res.json({ success: true, data: { ...result, items } });
       /* v8 ignore start -- DB-backed list failures are already covered by service tests. */
     } catch (error) {
       next(error);
@@ -341,6 +342,16 @@ const EXPORT_MASK_FIELDS: Record<string, Array<[string, 'phone' | 'idCard' | 'ba
   users: [['phone', 'phone']],
 };
 
+/** 列表响应的业务 PII 掩码（与导出同口径）：仅掩码身份证号，保留后 4 位。 */
+const LIST_MASK_FIELDS: Record<string, string[]> = {
+  patients: ['idCard'],
+};
+
+/** 身份证/银行卡掩码：保留后 4 位，前缀 *（与 CSV 导出同一实现，避免口径漂移）。 */
+function maskIdCardValue(text: string): string {
+  return text.length > 4 ? `${'*'.repeat(Math.min(8, text.length - 4))}${text.slice(-4)}` : '*'.repeat(text.length);
+}
+
 /** 通用 CSV 导出脱敏：患者手机/身份证、供应商账号等不得随导出明文外泄。 */
 function maskExportRow(resourceName: string, row: Record<string, unknown>): Record<string, unknown> {
   const masked = { ...row };
@@ -353,10 +364,23 @@ function maskExportRow(resourceName: string, row: Record<string, unknown>): Reco
       masked[field] = maskPhoneForExport(text);
     } else if (kind === 'idCard' || kind === 'bankAccount') {
 /* v8 ignore next */
-      masked[field] = text.length > 4 ? `${'*'.repeat(Math.min(8, text.length - 4))}${text.slice(-4)}` : '*'.repeat(text.length);
+      masked[field] = maskIdCardValue(text);
     } else {
       masked[field] = text.length > 4 ? `${text.slice(0, 1)}****${text.slice(-1)}` : text;
     }
+  }
+  return masked;
+}
+
+/** 通用列表响应脱敏：列表场景只需身份证掩码（数据最小化），完整值由详情接口提供。 */
+function maskListRow(resourceName: string, row: Record<string, unknown>): Record<string, unknown> {
+  const fields = LIST_MASK_FIELDS[resourceName];
+  if (!fields) return row;
+  const masked = { ...row };
+  for (const field of fields) {
+    const value = masked[field];
+    if (value === undefined || value === null || value === '') continue;
+    masked[field] = maskIdCardValue(String(value));
   }
   return masked;
 }

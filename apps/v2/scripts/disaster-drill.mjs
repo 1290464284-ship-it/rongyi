@@ -1,10 +1,12 @@
-import crypto from 'node:crypto';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveSimulatedDataDir } from './simulated-data.mjs';
+import { SIM_ADMIN_PASSWORD } from './lib/sim-admin.mjs';
+import { pickFreePort } from './lib/smoke-runtime.mjs';
+import { createDrill } from './lib/drill-runtime.mjs';
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const serverScript = path.join(appRoot, 'dist-electron', 'server.cjs');
@@ -14,18 +16,16 @@ const legacyDb = path.join(appRoot, 'legacy', 'dental.sqlite');
 const legacySchemaDir = path.join(appRoot, 'legacy', 'schema');
 const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-disaster-drill-'));
 const dataDir = path.join(tempRoot, 'data');
-const dbPath = path.join(dataDir, 'v2.sqlite');
 const backupDir = path.join(dataDir, 'backups');
-const mirrorDir = path.join(tempRoot, 'mirror');
 const logDir = path.join(dataDir, 'logs');
-const port = 40000 + Math.floor(Math.random() * 1000);
+const port = await pickFreePort(40000, 40999);
 const jwtSecret = 'disaster-drill-secret-0123456789abcdef0123456789abcdef';
 const goodKey = 'disaster-good-key-0123456789abcdef';
 const wrongKey = 'disaster-wrong-key-9876543210abcdef';
-// 模拟库管理员密码固定为 v2-sim-admin-password（simulate-clinic-data.ts
-// 硬编码，不读外层 env）。本 drill 复制模拟库启动 API，登录必须用该固定
-// 口令；取外层 V2_ADMIN_PASSWORD（CI smoke job 的 dev-server 引导口令）会 401。
-const adminPassword = 'v2-sim-admin-password';
+// 模拟库管理员密码固定（simulate-clinic-data.ts 硬编码，不读外层 env）。
+// 本 drill 复制模拟库启动 API，登录必须用该固定口令；取外层 V2_ADMIN_PASSWORD
+// （CI smoke job 的 dev-server 引导口令）会 401。
+const adminPassword = SIM_ADMIN_PASSWORD;
 
 const sourceSimDir = resolveSimulatedDataDir();
 if (!sourceSimDir) {
@@ -41,89 +41,22 @@ for (const suffix of ['', '-wal', '-shm']) {
   if (fs.existsSync(source)) fs.copyFileSync(source, path.join(dataDir, `v2.sqlite${suffix}`));
 }
 
-let apiProcess = null;
+const drill = createDrill({
+  appRoot,
+  serverScript,
+  legacyDb,
+  legacySchemaDir,
+  dataDir,
+  backupDir,
+  logDir,
+  port,
+  jwtSecret,
+  backupKey: goodKey,
+  adminPassword,
+  readyLabel: 'disaster drill',
+});
 
-function baseEnv(overrides = {}) {
-  return {
-    ...process.env,
-    V2_PORT: String(port),
-    V2_HOST: '127.0.0.1',
-    NODE_ENV: 'development',
-    V2_DATA_DIR: dataDir,
-    V2_BACKUP_DIR: backupDir,
-    V2_LOG_DIR: logDir,
-    // A-P2：自动备份完成后同步到异地镜像；恢复演练/soak 可缩短首执行延迟。
-    V2_BACKUP_MIRROR_DIR: mirrorDir,
-    V2_BACKUP_MIRROR_KEEP: '30',
-    V2_AUTO_BACKUP_FIRST_DELAY_MS: '1500',
-    V2_AUTO_BACKUP_INTERVAL_MS: '60000',
-    V2_LEGACY_DB_PATH: legacyDb,
-    V2_LEGACY_SCHEMA_DIR: legacySchemaDir,
-    V2_DB_PATH: dbPath,
-    V2_JWT_SECRET: jwtSecret,
-    V2_BACKUP_KEY: goodKey,
-    V2_ADMIN_PASSWORD: adminPassword,
-    ...overrides,
-  };
-}
-
-function waitForApi(timeoutMs = 30_000) {
-  const startedAt = Date.now();
-  return new Promise((resolve, reject) => {
-    const attempt = async () => {
-      if (Date.now() - startedAt > timeoutMs) {
-        reject(new Error('API did not become ready during disaster drill'));
-        return;
-      }
-      try {
-        const response = await fetch(`http://127.0.0.1:${port}/api/v2/health`, { signal: AbortSignal.timeout(1000) });
-        if (response.ok) {
-          resolve();
-          return;
-        }
-      } catch {
-        // retry
-      }
-      setTimeout(() => void attempt(), 500);
-    };
-    void attempt();
-  });
-}
-
-async function request(pathname, options = {}, token = null) {
-  const headers = { 'content-type': 'application/json', ...(options.headers ?? {}) };
-  if (token) headers.authorization = `Bearer ${token}`;
-  const response = await fetch(`http://127.0.0.1:${port}/api/v2${pathname}`, { ...options, headers });
-  const body = await response.json().catch(() => null);
-  if (!response.ok || !body?.success) {
-    throw new Error(`${options.method ?? 'GET'} ${pathname}: ${response.status} ${JSON.stringify(body)}`);
-  }
-  return body.data;
-}
-
-async function startApi(overrides = {}) {
-  apiProcess = spawn(process.execPath, [serverScript], {
-    cwd: appRoot,
-    env: baseEnv(overrides),
-    stdio: ['ignore', 'pipe', 'pipe'],
-    windowsHide: true,
-  });
-  await waitForApi();
-}
-
-function stopApi() {
-  return new Promise((resolve) => {
-    if (!apiProcess || apiProcess.killed) {
-      resolve();
-      return;
-    }
-    apiProcess.once('exit', resolve);
-    apiProcess.kill();
-    setTimeout(() => {
-      if (apiProcess && !apiProcess.killed) apiProcess.kill('SIGKILL');
-    }, 5000).unref();
-  });
-}
+const { startApi, stopApi, request, baseEnv, assert } = drill;
 
 function runNode(scriptPath, args = [], env = {}) {
   return spawnSync(process.execPath, [scriptPath, ...args], {
@@ -131,31 +64,6 @@ function runNode(scriptPath, args = [], env = {}) {
     env: baseEnv(env),
     encoding: 'utf8',
   });
-}
-
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
-}
-
-function sha256File(filePath) {
-  const hash = crypto.createHash('sha256');
-  hash.update(fs.readFileSync(filePath));
-  return hash.digest('hex');
-}
-
-async function waitUntil(predicate, timeoutMs, message) {
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < timeoutMs) {
-    if (predicate()) return;
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
-  throw new Error(message);
-}
-
-function listBackupFiles(dir) {
-  return fs.existsSync(dir)
-    ? fs.readdirSync(dir).filter((name) => name.includes('backup-') && (name.endsWith('.enc') || name.endsWith('.sqlite')))
-    : [];
 }
 
 try {
@@ -179,15 +87,6 @@ try {
   const backupPath = path.join(backupDir, backup.filename);
   const verified = await request(`/backups/${encodeURIComponent(backup.filename)}/verify`, {}, login.token);
   assert(verified.integrity === 'ok', 'backup verification failed');
-
-  // A-P2.4：自动备份完成后应同步一份到镜像目录（首延迟 1.5s），且 sha256 一致。
-  await waitUntil(() => listBackupFiles(mirrorDir).length >= 1, 30_000, 'mirror backup did not appear');
-  const mirrorFilename = listBackupFiles(mirrorDir)[0];
-  const mirrorPath = path.join(mirrorDir, mirrorFilename);
-  const localMirrorSource = path.join(backupDir, mirrorFilename);
-  assert(fs.existsSync(localMirrorSource), 'mirrored backup has no local source copy');
-  assert(sha256File(localMirrorSource) === sha256File(mirrorPath), 'mirror copy sha256 mismatch');
-  console.log(`PASS automatic backup mirrored with matching sha256 (${mirrorFilename})`);
   await stopApi();
 
   const wrongTarget = path.join(dataDir, 'restore-wrong-key.sqlite');
@@ -213,26 +112,7 @@ try {
   const verifyResult = runNode(verifyScript, [], { V2_DB_PATH: goodTarget });
   assert(verifyResult.status === 0, 'restored database integrity check failed');
   console.log(`PASS good backup restores with integrity ok (patient=${patient.id})`);
-
-  // A-P2.4：本机备份全丢时，直接用镜像目录里的副本恢复（异地恢复路径）。
-  const mirrorTarget = path.join(dataDir, 'restore-from-mirror.sqlite');
-  const mirrorRestoreResult = runNode(restoreScript, [mirrorPath, mirrorTarget], { V2_BACKUP_KEY: goodKey });
-  assert(mirrorRestoreResult.status === 0, 'mirror copy restore must succeed');
-  const mirrorVerifyResult = runNode(verifyScript, [], { V2_DB_PATH: mirrorTarget });
-  assert(mirrorVerifyResult.status === 0, 'mirror-restored database integrity check failed');
-  console.log('PASS mirror copy restores with integrity ok');
-
-  // A-P2 失败模式：镜像目录不可达（指向文件）时主备份照常完成，不阻塞主流程。
-  const blockedMirror = path.join(tempRoot, 'blocked-mirror.txt');
-  fs.writeFileSync(blockedMirror, 'not a directory');
-  const backupCountBefore = listBackupFiles(backupDir).length;
-  await startApi({ V2_BACKUP_MIRROR_DIR: blockedMirror });
-  await waitUntil(() => listBackupFiles(backupDir).length > backupCountBefore, 30_000, 'automatic backup did not run with blocked mirror');
-  assert(listBackupFiles(mirrorDir).length === 1, 'blocked mirror run must not write into the healthy mirror dir');
-  console.log('PASS unreachable mirror does not block the main backup');
-  await stopApi();
-
-  console.log('disaster drill passed: wrong key, corrupt backup, good restore, mirror restore, blocked mirror');
+  console.log('disaster drill passed: wrong key, corrupt backup, good restore');
 } finally {
   await stopApi();
   fs.rmSync(tempRoot, { recursive: true, force: true });

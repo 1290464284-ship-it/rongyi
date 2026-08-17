@@ -57,6 +57,37 @@ describe('workflow routes', () => {
     expect([200, 400, 404]).toContain((await request(app).post('/api/v2/follow-ups/batch-complete')).status);
     expect([200, 400, 404]).toContain((await request(app).patch('/api/v2/follow-ups/missing/complete')).status);
     expect([200, 400, 404]).toContain((await request(app).post('/api/v2/follow-ups/batch-generate')).status);
+    // T-1：补齐其余工作流端点的空体路径（`?? []`/`?? 0`/`?? ''`/requestId 三元），
+    // 使这些分支计入真实覆盖率而非靠采集缺陷排除。
+    expect([200, 400, 404]).toContain((await request(app).post('/api/v2/inventory/replenishment/apply')).status);
+    expect([200, 400, 404]).toContain((await request(app).post('/api/v2/wechat/send-batch')).status);
+    expect([200, 400, 404]).toContain((await request(app).post('/api/v2/wechat/msg-1/send')).status);
+    expect([200, 400, 404]).toContain((await request(app).post('/api/v2/member-cards/missing/points')).status);
+    expect([200, 400, 404]).toContain((await request(app).post('/api/v2/purchase-orders')).status);
+    expect([200, 400, 404]).toContain((await request(app).patch('/api/v2/processing-orders/missing/status')).status);
+    expect([200, 400, 404]).toContain((await request(app).post('/api/v2/charges')).status);
+    expect([200, 400, 404]).toContain((await request(app).patch('/api/v2/purchase-orders/missing/receive')).status);
+  });
+
+  it('normalizes absent query cursors to null', async () => {
+    await request(app).get('/api/v2/notifications?cursor=abc').expect(200);
+    await request(app).get('/api/v2/notifications?cursor=').expect(200);
+    await request(app).get('/api/v2/follow-ups/reminders?cursor=abc&scope=overdue').expect(200);
+    await request(app).get('/api/v2/follow-ups/reminders?cursor=&scope=overdue').expect(200);
+  });
+
+  it('passes a string payMethodName through the charge pay route', async () => {
+    const now = new Date('2026-08-13T00:00:00.000Z').toISOString();
+    db.prepare(
+      `INSERT INTO Charge (id, clinicId, createdAt, updatedAt, deletedAt,
+         number, patientId, totalAmount, paidAmount, refundedAmount, status)
+       VALUES ('charge-pay-1', 'clinic-v2-001', ?, ?, NULL, 'CH-PAY-1', 'patient-demo-001', 100, 0, 0, 'UNPAID')`,
+    ).run(now, now);
+    const res = await request(app)
+      .patch('/api/v2/charges/charge-pay-1/pay')
+      .send({ amount: 50, method: 'CASH', payMethodName: '微信' });
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ success: true });
   });
 
   it('cancels a charge through the workflow route', async () => {

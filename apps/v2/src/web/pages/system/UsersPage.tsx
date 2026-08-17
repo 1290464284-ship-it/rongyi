@@ -5,82 +5,19 @@ import type { Page } from '../../lib/types';
 import {
   ConfirmDialog,
   DataTable,
-  Dialog,
   LoadingState,
   PageError,
   PagePager,
   PromptDialog,
 } from '../../components';
-import { formatDisplayValue } from '../../lib/format';
 import { errorMessage } from '../../lib/messages';
 import { useToast } from '../../lib/toast-context';
 import { ChangeOwnPasswordForm } from './ChangeOwnPasswordForm';
-
-const ROLE_LABELS: Record<string, string> = {
-  BOSS: '老板',
-  ADMIN: '管理员',
-  DOCTOR: '医生',
-};
-
-const PERMISSION_KEYS = [
-  'dashboard',
-  'frontDesk',
-  'patients',
-  'clinical',
-  'finance',
-  'inventory',
-  'analytics',
-  'communication',
-  'hr',
-  'system',
-];
-
-const PERMISSION_LABELS: Record<string, string> = {
-  dashboard: '经营报表',
-  frontDesk: '前台工作',
-  patients: '患者档案',
-  clinical: '临床诊疗',
-  finance: '收费财务',
-  inventory: '库存采购',
-  analytics: '经营分析',
-  communication: '随访微信',
-  hr: '人事排班',
-  system: '系统管理',
-};
-
-type UserRow = Record<string, unknown> & {
-  id: string;
-  username: string;
-  name: string;
-  role: string;
-  phone?: string | null;
-  active: boolean;
-};
-
-interface UserRoleRow {
-  userId: string;
-  role: string;
-}
-
-interface UserForm {
-  username: string;
-  password: string;
-  name: string;
-  role: string;
-  phone: string;
-  active: boolean;
-}
-
-const emptyForm: UserForm = {
-  username: '',
-  password: '',
-  name: '',
-  role: 'DOCTOR',
-  phone: '',
-  active: true,
-};
-
-const USER_PAGE_SIZE = 100;
+import { userColumns } from './users-columns';
+import { PERMISSION_KEYS } from './users-constants';
+import { UserFormDialog } from './UserFormDialog';
+import { PermissionDialog } from './PermissionDialog';
+import { emptyForm, USER_PAGE_SIZE, type UserForm, type UserRoleRow, type UserRow } from './users-types';
 
 export function UsersPage() {
   const { showToast } = useToast();
@@ -98,7 +35,8 @@ export function UsersPage() {
   const [page, setPage] = useState(1);
 
   const me = useQuery({
-    queryKey: ['auth-me'],
+    // 与 Layout 同端点共享缓存键，避免重复请求 /auth/me
+    queryKey: ['me'],
     queryFn: () => apiRequest<{ role?: string }>('/auth/me'),
   });
   const users = useQuery({
@@ -280,49 +218,18 @@ export function UsersPage() {
     }
   }
 
-  const columns = [
-    { key: 'username', label: '用户名' },
-    { key: 'name', label: '姓名' },
-    {
-      key: 'role',
-      label: '角色',
-      render: (row: UserRow) => {
-        const extra = (userRoles.data?.items ?? [])
-          .filter((entry) => entry.userId === row.id)
-          .map((entry) => entry.role);
-        return (
-          <>
-            {ROLE_LABELS[row.role] ?? row.role}
-            {extra.map((role) => (
-              <span key={role} className="role-badge">{ROLE_LABELS[role] ?? role}</span>
-            ))}
-          </>
-        );
-      },
-    },
-    { key: 'phone', label: '电话' },
-    {
-      key: 'active',
-      label: '启用',
-      render: (row: UserRow) => formatDisplayValue(row.active, { name: 'active', type: 'boolean' }),
-    },
-    {
-      key: 'actions',
-      label: '操作',
-      render: (row: UserRow) => (
-        isBoss || row.role !== 'BOSS' ? (
-          <>
-            <button disabled={stale} onClick={() => openEdit(row)}>编辑</button>
-            <button disabled={stale} onClick={() => void openPermissions(row)}>权限</button>
-            <button disabled={stale} onClick={() => setPasswordTarget(row.id)}>重置密码</button>
-            <button className="danger" disabled={stale} onClick={() => setDeleteTarget(row)}>删除</button>
-          </>
-        ) : (
-          <span>老板账号</span>
-        )
-      ),
-    },
-  ];
+  // userColumns 仅存储回调供 DataTable 行点击时调用；ref 读取发生在事件处理器中，
+  // 不在渲染期 —— react-hooks/refs 静态分析无法区分，属误报
+  // eslint-disable-next-line react-hooks/refs
+  const columns = userColumns({
+    userRoles: userRoles.data?.items ?? [],
+    isBoss,
+    stale,
+    onEdit: openEdit,
+    onPermissions: (row) => void openPermissions(row),
+    onResetPassword: (row) => setPasswordTarget(row.id),
+    onDelete: setDeleteTarget,
+  });
 
   return (
     <div className="page">
@@ -339,95 +246,27 @@ export function UsersPage() {
         disabled={stale}
       />
 
-      <Dialog open={showForm} title={editingId ? '编辑员工' : '新建员工'} onClose={() => setShowForm(false)}>
-        <form onSubmit={submit}>
-          <label>
-            用户名
-            <input value={form.username} disabled={Boolean(editingId)} onChange={(event) => setForm((current) => ({ ...current, username: event.target.value }))} />
-          </label>
-          {!editingId && (
-            <label>
-              初始密码
-              <input type="password" value={form.password} onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))} />
-              <small>至少 6 位</small>
-            </label>
-          )}
-          <label>
-            姓名
-            <input value={form.name} onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))} />
-          </label>
-          <label>
-            角色
-            <select value={form.role} onChange={(event) => setForm((current) => ({ ...current, role: event.target.value }))}>
-              {Object.entries(ROLE_LABELS)
-                .filter(([value]) => isBoss || value !== 'BOSS')
-                .map(([value, label]) => (
-                  <option key={value} value={value}>{label}</option>
-                ))}
-            </select>
-          </label>
-          <label>
-            电话
-            <input value={form.phone} onChange={(event) => setForm((current) => ({ ...current, phone: event.target.value }))} />
-          </label>
-          <fieldset className="role-checkbox-group">
-            <legend>附加岗位</legend>
-            {Object.entries(ROLE_LABELS)
-              .filter(([value]) => value !== form.role && (isBoss || value !== 'BOSS'))
-              .map(([value, label]) => (
-                <label key={value}>
-                  <input
-                    type="checkbox"
-                    checked={additionalRoles.includes(value)}
-                    onChange={(event) => {
-                      setAdditionalRoles((current) => (
-                        event.target.checked
-                          ? [...current, value]
-                          : current.filter((role) => role !== value)
-                      ));
-                    }}
-                  />
-                  {label}
-                </label>
-              ))}
-          </fieldset>
-          <label>
-            <input type="checkbox" checked={form.active} onChange={(event) => setForm((current) => ({ ...current, active: event.target.checked }))} />
-            启用账号
-          </label>
-          <div className="modal-actions">
-            <button type="button" onClick={() => setShowForm(false)}>取消</button>
-            <button type="submit" disabled={submitting}>{submitting ? '保存中...' : '保存'}</button>
-          </div>
-        </form>
-      </Dialog>
+      <UserFormDialog
+        open={showForm}
+        editing={editingId !== null}
+        form={form}
+        setForm={setForm}
+        additionalRoles={additionalRoles}
+        setAdditionalRoles={setAdditionalRoles}
+        isBoss={isBoss}
+        submitting={submitting}
+        onSubmit={submit}
+        onClose={() => setShowForm(false)}
+      />
 
-      <Dialog
-        open={permissionTarget !== null}
-        title={`设置「${permissionTarget?.name ?? ''}」的权限`}
+      <PermissionDialog
+        target={permissionTarget}
+        permissionForm={permissionForm}
+        setPermissionForm={setPermissionForm}
+        busy={permissionBusy}
+        onSave={savePermissions}
         onClose={() => setPermissionTarget(null)}
-      >
-        <div className="role-checkbox-group">
-          {/* PERMISSION_KEYS 全部存在于 PERMISSION_LABELS 中，`?? key` 兜底为死代码，已删除。 */}
-          {PERMISSION_KEYS.map((key) => (
-            <label key={key}>
-              <input
-                type="checkbox"
-                checked={Boolean(permissionForm[key])}
-                disabled={permissionBusy}
-                onChange={(event) => setPermissionForm((current) => ({ ...current, [key]: event.target.checked }))}
-              />
-              {PERMISSION_LABELS[key]}
-            </label>
-          ))}
-        </div>
-        <div className="modal-actions">
-          <button type="button" onClick={() => setPermissionTarget(null)}>取消</button>
-          <button disabled={permissionBusy} onClick={() => void savePermissions()}>
-            {permissionBusy ? '保存中...' : '保存权限'}
-          </button>
-        </div>
-      </Dialog>
+      />
 
       <PromptDialog
         key={passwordTarget ?? 'no-target'}

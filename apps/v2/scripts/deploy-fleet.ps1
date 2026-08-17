@@ -1,4 +1,4 @@
-﻿<#
+<#
 .SYNOPSIS
   A-P4.1 一键部署脚本：静默安装 → 信任内部签名证书 → 预置 userData →
   写入无人值守环境变量 → 可选启动应用。
@@ -171,7 +171,8 @@ $requiredFiles = @(
   $appExe,
   (Join-Path $InstallDir "resources\app.asar"),
   (Join-Path $InstallDir "resources\legacy\dental.sqlite"),
-  (Join-Path $InstallDir "resources\legacy\schema\system.tables.ts")
+  # E-5 裁剪（2026-08-17）：打包内仅携带 generated.sql（运行时首选），不再打包 .tables.ts
+  (Join-Path $InstallDir "resources\legacy\schema\legacy-schema.generated.sql")
 )
 foreach ($file in $requiredFiles) {
   if (-not (Test-Path -LiteralPath $file)) {

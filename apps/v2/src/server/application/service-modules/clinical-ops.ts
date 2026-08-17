@@ -7,6 +7,7 @@ import { validatePayload } from '../../http/validation';
 import { SqlitePatientRiskRepository } from '../../infrastructure/repositories/core.repositories';
 import { resourceRegistry } from '../../../domain/resources';
 import { tenantAnd, tenantParams, tenantWhere } from '../../infrastructure/tenant';
+import { keysetCondition, keysetOrder, nextCursorFrom } from '../../infrastructure/keyset';
 import type { AppContext } from '../../../domain/contracts';
 import type { PatientRiskRepository } from '../ports';
 import { FORBIDDEN_BULK_IMPORT_RESOURCES, assertPatientExists } from './common';
@@ -211,8 +212,8 @@ export class NotificationService {
   list(
     userId: string,
     clinicId?: string | null,
-    options?: { page?: number; pageSize?: number },
-  ): { items: Array<Record<string, unknown>>; total: number; page: number; pageSize: number; truncated?: boolean } {
+    options?: { page?: number; pageSize?: number; cursor?: string | null },
+  ): { items: Array<Record<string, unknown>>; total: number; page: number; pageSize: number; truncated?: boolean; nextCursor?: string | null } {
     const rawPage = Number(options?.page);
     const rawPageSize = Number(options?.pageSize);
     const page = Number.isFinite(rawPage) && rawPage >= 1 ? Math.floor(rawPage) : 1;
@@ -224,10 +225,23 @@ export class NotificationService {
     const total = Number((this.db.prepare(
       `SELECT COUNT(*) AS total FROM Notification WHERE userId = ? AND deletedAt IS NULL${clinicClause}`,
     ).get(userId, ...clinicParams) as { total: number }).total);
+    // S-2 keyset：两模式统一按 (createdAt DESC, id DESC) 排序，恒取 pageSize+1 行并回传 nextCursor。
+    const keyset = { columns: [{ column: 'createdAt', key: 'createdAt' }], idColumn: 'id', direction: 'DESC' as const };
+    const cursorCondition = keysetCondition(options?.cursor, keyset);
+    const hasCursor = cursorCondition.where !== '';
     const items = this.db.prepare(
-      `SELECT * FROM Notification WHERE userId = ? AND deletedAt IS NULL${clinicClause} ORDER BY createdAt DESC LIMIT ? OFFSET ?`,
-    ).all(userId, ...clinicParams, pageSize, offset) as Array<Record<string, unknown>>;
-    return { items, total, page, pageSize, truncated: total > offset + items.length };
+      `SELECT * FROM Notification WHERE userId = ? AND deletedAt IS NULL${clinicClause}${cursorCondition.where}
+       ${keysetOrder(keyset)}
+       LIMIT ${pageSize + 1} OFFSET ${hasCursor ? 0 : offset}`,
+    ).all(userId, ...clinicParams, ...cursorCondition.params) as Array<Record<string, unknown>>;
+    return {
+      items: items.slice(0, pageSize),
+      total,
+      page,
+      pageSize,
+      truncated: total > offset + items.slice(0, pageSize).length,
+      nextCursor: nextCursorFrom(items, pageSize, keyset),
+    };
   }
 
   markRead(id: string, userId: string, clinicId?: string | null): Record<string, unknown> {

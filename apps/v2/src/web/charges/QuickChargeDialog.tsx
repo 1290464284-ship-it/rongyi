@@ -1,5 +1,6 @@
 import type { FormEvent } from 'react';
 import { SearchableSelect } from '../components';
+import { formatMoney } from '../lib/format';
 import type { ChargeTreeNode } from './types';
 
 export function QuickChargeDialog({
@@ -29,7 +30,7 @@ export function QuickChargeDialog({
       </label>
       <label>
         单价（元）
-        <input readOnly aria-label="快捷收费单价" value={target ? (target.price / 100).toString() : ''} />
+        <input readOnly aria-label="快捷收费单价" value={target ? formatMoney(target.price) : ''} />
       </label>
       <label>
         数量

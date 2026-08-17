@@ -93,6 +93,14 @@ function spawnSupervisor() {
   try {
     const supervisorPath = path.join(__dirname, 'supervisor.cjs');
     const stopMarker = path.join(app.getPath('userData'), '.supervisor-stop');
+    // H3：启动时清除可能残留的停止标记——will-quit 每次优雅退出都会写入，
+    // 若上次退出时 supervisor 已不在（如启动早期失败路径），标记残留会使
+    // 本次看门狗一启动就静默退出。与 will-quit 的写入成对。
+    try {
+      fs.rmSync(stopMarker, { force: true });
+    } catch {
+      // best effort
+    }
     const child = spawn(
       process.execPath,
       [supervisorPath, process.execPath, String(process.pid), stopMarker],
@@ -119,6 +127,7 @@ const UPDATE_RECHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 let updateCheckAttempts = 0;
 let updateFirstFailureAt = 0;
 let updateRecheckTimer = null;
+let updateRetryTimer = null;
 
 function scheduleUpdateChecks() {
   const attemptCheck = () => {
@@ -144,8 +153,12 @@ function scheduleUpdateChecks() {
           });
           return;
         }
-        const delay = UPDATE_RETRY_DELAYS_MS[Math.min(updateCheckAttempts - 1, UPDATE_RETRY_DELAYS_MS.length - 1)];
-        setTimeout(attemptCheck, delay);
+        // 退避重试句柄随 will-quit 清理，避免退出瞬间再触发一次检查。
+        updateRetryTimer = setTimeout(
+          attemptCheck,
+          UPDATE_RETRY_DELAYS_MS[Math.min(updateCheckAttempts - 1, UPDATE_RETRY_DELAYS_MS.length - 1)],
+        );
+        updateRetryTimer.unref?.();
       });
   };
   attemptCheck();
@@ -236,6 +249,11 @@ app.whenReady().then(async () => {
     },
   ]));
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+    // 说明（与 index.html meta CSP 的双轨关系）：生产页面经 file:// 加载，
+    // Electron webRequest 不拦截 file://，因此这里的 header CSP 仅对 dev
+    // （http://localhost:518x）生效；生产唯一生效来源是 index.html 的 meta
+    // CSP + window.cjs prepareRuntimeHtml 的精确端口重写。两者字段应保持
+    // 意图一致（生产 meta 另含 nonce 与 media-src），修改任一处需同步评估。
     const apiOrigin = state.apiPort ? `http://127.0.0.1:${state.apiPort}` : '';
     const devWs = isDev ? ` ws://localhost:${new URL(WEB_DEV_ORIGIN).port}` : '';
     // Vite dev 的 react-refresh 会注入内联模块脚本；生产构建没有内联脚本，
@@ -314,9 +332,8 @@ app.whenReady().then(async () => {
   ipcMain.handle('desktop:restart-api', async (_event) => {
     assertTrustedRenderer(_event);
     state.apiRestartCount = 0;
-    state.shutdownStarted = false;
-    state.isQuitting = false;
     await stopApi();
+    // M6：stopApi 内部已置 shutdownStarted/isQuitting，这里只做重启后的复位
     state.shutdownStarted = false;
     state.isQuitting = false;
     await new Promise((resolve) => setTimeout(resolve, 150));
@@ -469,6 +486,7 @@ process.on('SIGINT', () => {
 
 app.on('will-quit', () => {
   if (updateRecheckTimer) clearInterval(updateRecheckTimer);
+  if (updateRetryTimer) clearTimeout(updateRetryTimer);
   stopTelemetry();
   terminateApiSync();
   // 优雅退出：写停止标记，告知 supervisor 不要拉起新实例。

@@ -291,8 +291,8 @@ export interface FollowUpRecord {
 export interface FollowUpRepository {
   reminders(
     clinicId?: string | null,
-    options?: { page?: number; pageSize?: number; scope?: 'overdue' | 'today' | 'upcoming' | 'all' },
-  ): { items: Array<Record<string, unknown>>; total: number; page: number; pageSize: number; truncated?: boolean };
+    options?: { page?: number; pageSize?: number; scope?: 'overdue' | 'today' | 'upcoming' | 'all'; cursor?: string | null },
+  ): { items: Array<Record<string, unknown>>; total: number; page: number; pageSize: number; truncated?: boolean; nextCursor?: string | null };
   insert(record: FollowUpRecord): void;
   complete(id: string, completedAt: string, updatedAt: string, clinicId?: string | null, result?: string | null): number;
 }
@@ -313,8 +313,8 @@ export interface WechatMessageRepository {
 export interface AlertRepository {
   open(
     clinicId?: string | null,
-    options?: { page?: number; pageSize?: number },
-  ): { items: Array<Record<string, unknown>>; total: number; page: number; pageSize: number; truncated?: boolean };
+    options?: { page?: number; pageSize?: number; cursor?: string | null },
+  ): { items: Array<Record<string, unknown>>; total: number; page: number; pageSize: number; truncated?: boolean; nextCursor?: string | null };
   setStatus(id: string, status: string, userId: string | null, now: string, clinicId?: string | null): number;
 }
 

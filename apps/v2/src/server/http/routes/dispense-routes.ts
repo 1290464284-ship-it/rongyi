@@ -8,6 +8,7 @@ import type { Express } from 'express';
 
 import { wrapAsync } from '../middleware';
 import { parsePagination } from '../pagination';
+import { nextCursorFrom } from '../../infrastructure/keyset';
 import { stableRequestBodyHash, withIdempotency } from '../../infrastructure/idempotency';
 import {
   DispenseService,
@@ -36,9 +37,13 @@ export function registerDispenseRoutes(
       ? String(req.query.status)
       : undefined;
     const { page, pageSize } = parsePagination(req);
-    const items = service.list(req.context!, { status, page, pageSize });
+    const cursor = typeof req.query.cursor === 'string' && req.query.cursor !== '' ? String(req.query.cursor) : null;
+    // S-2 keyset：服务端恒取 pageSize+1 行（含多取行判截断），路由裁剪并回传 nextCursor。
+    const rows = service.list(req.context!, { status, page, pageSize, cursor });
+    const items = rows.slice(0, pageSize);
+    const nextCursor = nextCursorFrom(rows, pageSize, { columns: [{ column: 'createdAt', key: 'createdAt' }], idColumn: 'id', direction: 'DESC' });
     const total = service.count(req.context!, { status });
-    res.json({ success: true, data: { items, total, page, pageSize } });
+    res.json({ success: true, data: { items, total, page, pageSize, nextCursor } });
   }));
 
   app.get('/api/v2/dispenses/:id', wrapAsync(async (req, res) => {
@@ -93,9 +98,10 @@ export function registerDispenseRoutes(
       ? String(req.query.recordDate)
       : undefined;
     const { page, pageSize } = parsePagination(req, { defaultPageSize: 200 });
+    const cursor = typeof req.query.cursor === 'string' && req.query.cursor !== '' ? String(req.query.cursor) : null;
     res.json({
       success: true,
-      data: narcoticService.narcoticList(req.context!, { ...(recordDate ? { recordDate } : {}), page, pageSize }),
+      data: narcoticService.narcoticList(req.context!, { ...(recordDate ? { recordDate } : {}), page, pageSize, cursor }),
     });
   }));
 

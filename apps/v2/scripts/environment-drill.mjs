@@ -3,6 +3,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { simAdminPassword } from './lib/sim-admin.mjs';
+import { pickFreePort } from './lib/smoke-runtime.mjs';
+import { assert } from './lib/drill-runtime.mjs';
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const serverScript = path.join(appRoot, 'dist-electron', 'server.cjs');
@@ -12,7 +15,7 @@ const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-environment-drill-'))
 const dataDir = path.join(tempRoot, 'data');
 const logDir = path.join(tempRoot, 'logs');
 const children = [];
-const adminPassword = process.env.V2_ADMIN_PASSWORD ?? 'v2-sim-admin-password';
+const adminPassword = simAdminPassword();
 const jwtSecret = 'environment-drill-secret-0123456789abcdef0123456789abcdef';
 const backupKey = 'environment-drill-backup-key-0123456789abcdef';
 
@@ -85,7 +88,7 @@ function startApi(env) {
   return spawn(process.execPath, [serverScript], {
     cwd: appRoot,
     env: baseEnv(env),
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: ['ignore', 'inherit', 'inherit'],
     windowsHide: true,
   });
 }
@@ -98,14 +101,13 @@ async function request(port, pathname, options = {}, token = null) {
   return { status: response.status, body };
 }
 
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
-}
-
+// 本 drill 是「多进程 + 每端口参数化」场景（children 数组 + 端口复用 + 不同的
+// logDir/backupDir 布局），waitForApi/request/startApi 的签名与单实例
+// createDrill 不匹配，故仅复用 lib/drill-runtime.mjs 的 assert，其余保留原样。
 try {
   fs.mkdirSync(dataDir, { recursive: true });
   fs.mkdirSync(logDir, { recursive: true });
-  const port = 45000 + Math.floor(Math.random() * 1000);
+  const port = await pickFreePort(45000, 45999);
 
   const healthy = startApi({ V2_PORT: String(port) });
   children.push(healthy);

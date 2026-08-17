@@ -108,4 +108,34 @@ describe('HrService and AlertService edge branches', () => {
     expect(() => failingNullAlerts.setStatus(String(nullAlertRace.id), 'RESOLVED')).toThrow('status update failed');
     expect(() => alerts.setStatus('missing-alert', 'RESOLVED', 'user-admin-001', context)).toThrow('Business alert not found');
   });
+
+  it('open：keyset 游标翻页与快照一致、不重不漏', () => {
+    const service = new AlertService(db);
+    // 本文件共享 DB：快照过滤本用例 edge-cursor-* 告警，再按 nextCursor 逐页对账。
+    for (let i = 0; i < 3; i += 1) {
+      service.create({
+        alertType: 'TEST',
+        level: 'INFO',
+        severity: 'INFO',
+        title: `Cursor ${i}`,
+        message: 'M',
+        source: `edge-cursor-${i}`,
+        clinicId: context.clinicId,
+      });
+    }
+    const onlyCursor = (rows: Array<Record<string, unknown>>) =>
+      rows.filter((row) => String(row.source ?? '').startsWith('edge-cursor-'));
+    const snapshot = onlyCursor(service.open(context, { page: 1, pageSize: 500 }).items);
+    expect(snapshot.length).toBeGreaterThanOrEqual(3);
+    const walked: string[] = [];
+    let cursor: string | null = null;
+    for (let page = 1; page <= 10; page += 1) {
+      const pageResult = service.open(context, { page, pageSize: 1, cursor });
+      walked.push(...onlyCursor(pageResult.items).map((row) => String(row.id)));
+      if (!pageResult.nextCursor) break;
+      cursor = pageResult.nextCursor;
+    }
+    expect(walked).toEqual(snapshot.map((row) => String(row.id)));
+    expect(new Set(walked).size).toBe(snapshot.length);
+  });
 });

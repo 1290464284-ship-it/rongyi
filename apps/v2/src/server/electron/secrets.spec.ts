@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { loadElectronModule } from './load-electron';
 
 interface SecretsModule {
-  getOrCreateSecret(fileName?: string): string;
+  getOrCreateSecret(fileName?: string): string | undefined;
   secretPath(key: string): string;
 }
 
@@ -70,5 +70,24 @@ describe('electron secrets', () => {
     const mod = loadElectronModule<SecretsModule>('../../../electron/secrets.cjs', { electron });
     expect(mod.getOrCreateSecret()).toBe(plain);
     expect(fs.readFileSync(path.join(secretsDir, 'jwt-secret')).toString('utf8').startsWith('enc:')).toBe(true);
+  });
+
+  it('fails closed when safeStorage is unavailable: session-only jwt and no backup key on disk', () => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-secrets-test-'));
+    const electron = {
+      app: { getPath: () => tempDir },
+      dialog: { showMessageBoxSync: vi.fn() },
+      safeStorage: { isEncryptionAvailable: () => false },
+    };
+    const mod = loadElectronModule<SecretsModule>('../../../electron/secrets.cjs', { electron });
+    const jwt = mod.getOrCreateSecret();
+    expect(jwt).toHaveLength(96);
+    // 绝不落盘明文
+    expect(fs.existsSync(path.join(tempDir, 'secrets', 'jwt-secret'))).toBe(false);
+    // 备份密钥不生成（返回 undefined → secret 文件省略该键，API 拒绝创建备份）
+    expect(mod.getOrCreateSecret('backup-key')).toBeUndefined();
+    expect(fs.existsSync(path.join(tempDir, 'secrets', 'backup-key'))).toBe(false);
+    // 会话内不持久化：再次调用得到新的随机密钥
+    expect(mod.getOrCreateSecret()).not.toBe(jwt);
   });
 });

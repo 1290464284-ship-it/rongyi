@@ -51,8 +51,8 @@ export class AlertService {
 
   open(
     context?: AppContext,
-    options?: { page?: number; pageSize?: number },
-  ): { items: Array<Record<string, unknown>>; total: number; page: number; pageSize: number; truncated?: boolean } {
+    options?: { page?: number; pageSize?: number; cursor?: string | null },
+  ): { items: Array<Record<string, unknown>>; total: number; page: number; pageSize: number; truncated?: boolean; nextCursor?: string | null } {
     return this.alertRepository.open(context?.clinicId ?? null, options);
   }
 

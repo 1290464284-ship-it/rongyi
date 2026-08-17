@@ -52,8 +52,11 @@ export function GlobalSearchPage() {
 
   const columns: DataTableColumn<Record<string, unknown>>[] = keys.map((key) => ({
     key,
-    label: key,
-    render: (row) => String(row[key] ?? ''),
+    // B3：resource 列显示中文资源名（与筛选按钮同一映射），其余键沿用原文
+    label: key === 'resource' ? '类型' : key,
+    render: (row) => (key === 'resource'
+      ? RESOURCE_LABELS[String(row[key] ?? '')] ?? String(row[key] ?? '')
+      : String(row[key] ?? '')),
   }));
 
   return (
@@ -62,7 +65,7 @@ export function GlobalSearchPage() {
         <h1>全局搜索</h1>
         <span className="table-muted">{rows.length} 条结果</span>
       </div>
-      <div className="inline-form">
+      <div className="tabs">
         {[['all', '全部'], ...resources.map((resource) => [resource, RESOURCE_LABELS[resource] ?? resource] as [string, string])].map(([value, label]) => (
           <button
             key={value}

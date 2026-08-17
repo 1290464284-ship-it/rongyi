@@ -1,8 +1,7 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
 import { CrudPage } from '../../components/CrudPage';
-import { SearchableSelect, type DataTableColumn } from '../../components';
+import { DoctorSelect, SearchableSelect, type DataTableColumn } from '../../components';
 import { formatMoney, centsToYuanString, splitList, toCents } from '../../lib/format';
 import { errorMessage } from '../../lib/messages';
 import { createInFlightGuard } from '../../lib/in-flight';
@@ -67,6 +66,7 @@ export function TreatmentsPage() {
       emptyMessage="暂无治疗"
       queryKey={['treatments']}
       endpoint="/resources/treatments"
+      paged
       initialForm={emptyForm}
       validate={(form) => {
         const price = Number(form.price || 0);
@@ -128,7 +128,6 @@ async function transitionTreatment(
   id: string,
   status: string,
 ) {
-  /* v8 ignore next -- spec「ignores a second status transition」已覆盖在途去重（探针验证执行、仅 1 次 PATCH），v8 未入账，属采集缺陷 */
   if (!transitionGuard.start(id)) return;
   try {
     await apiRequest(`/treatments/${id}/status`, {
@@ -157,7 +156,7 @@ function TreatmentStatusSelect({ rowId, onTransition, disabled }: {
       disabled={disabled}
       aria-label="变更治疗状态"
       onChange={(event) => {
-        /* v8 ignore next -- 本页列表无分页/搜索（queryKey 恒定），disabled 恒为 false，守卫为防御冗余 */
+        /* v8 ignore next -- 本页列表无分页/搜索（queryKey 恒定、同 key refetch 不产生 placeholderData），disabled 恒为 false，守卫为防御冗余（见 coverage-exclusions §4） */
         if (disabled) return;
         const next = event.target.value;
         setValue('');
@@ -173,25 +172,13 @@ function TreatmentStatusSelect({ rowId, onTransition, disabled }: {
 }
 
 function TreatmentFormFields({ form, update }: { form: TreatmentForm; update: (patch: Partial<TreatmentForm>) => void }) {
-  const doctors = useQuery({
-    queryKey: ['treatment-doctors'],
-    queryFn: () => apiRequest<Array<Record<string, unknown>>>('/doctors'),
-  });
   return (
     <>
       <label>
         患者
         <SearchableSelect resource="patients" value={form.patientId} onChange={(id) => update({ patientId: id })} ariaLabel="患者" placeholder="选择患者" />
       </label>
-      <label>
-        医生
-        <select value={form.doctorId} onChange={(event) => update({ doctorId: event.target.value })}>
-          <option value="">选择医生</option>
-          {doctors.data?.map((row) => (
-            <option key={String(row.id)} value={String(row.id)}>{String(row.name ?? row.id)}</option>
-          ))}
-        </select>
-      </label>
+      <DoctorSelect label="医生" value={form.doctorId} onChange={(id) => update({ doctorId: id })} />
       <label>
         项目编码
         <input value={form.code} onChange={(event) => update({ code: event.target.value })} />

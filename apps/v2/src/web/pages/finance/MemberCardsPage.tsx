@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useRef, useState } from 'react';
+import { FormEvent, useRef, useState } from 'react';
 import { apiRequest } from '../../lib/api';
 import { CrudPage } from '../../components/CrudPage';
 import { Dialog, SearchableSelect, type DataTableColumn } from '../../components';
@@ -83,6 +83,7 @@ export function MemberCardsPage() {
         queryKey={['member-cards']}
         endpoint="/resources/memberCards"
         pageSize={100}
+        paged
         initialForm={() => {
           editingIdRef.current = null;
           return { ...emptyForm };
@@ -119,8 +120,6 @@ export function MemberCardsPage() {
         dialogTitle={(editing) => (editing ? '编辑会员卡' : '新建会员卡')}
         rowActions={(row, ctx) => (
           <>
-            {(() => { staleRef.current = ctx.stale; return null; })()}
-            <ReloadSync reload={ctx.reload} onReload={(reload) => { reloadRef.current = reload; }} />
             <button disabled={ctx.stale} onClick={() => openAction(row.id, 'RECHARGE', ctx.stale)}>充值</button>
             <button disabled={ctx.stale} onClick={() => openAction(row.id, 'CONSUME', ctx.stale)}>消费</button>
             <button disabled={ctx.stale} onClick={() => openAction(row.id, 'POINTS', ctx.stale)}>积分</button>
@@ -128,6 +127,10 @@ export function MemberCardsPage() {
             <button disabled={ctx.stale} onClick={() => openQuote(row, ctx.stale)}>报价试算</button>
           </>
         )}
+        onContextChange={(ctx) => {
+          staleRef.current = ctx.stale;
+          reloadRef.current = ctx.reload;
+        }}
         renderForm={(ctx) => (
           <>
             <label>
@@ -188,7 +191,6 @@ export function MemberCardsPage() {
   );
 
   function openAction(id: string, kind: 'RECHARGE' | 'CONSUME' | 'POINTS', stale: boolean) {
-    /* v8 ignore next -- 本页列表无分页/搜索（queryKey 恒定），stale 恒为 false 且按钮 disabled，守卫为防御冗余 */
     if (stale) return;
     setActionTarget(id);
     setActionKind(kind);
@@ -196,14 +198,12 @@ export function MemberCardsPage() {
   }
 
   function openPlan(row: CardRow, stale: boolean) {
-    /* v8 ignore next -- 同上 */
     if (stale) return;
     setActionTarget(row.id);
     setActionKind('PLAN');
   }
 
   function openQuote(row: CardRow, stale: boolean) {
-    /* v8 ignore next -- 同上 */
     if (stale) return;
     setActionTarget(row.id);
     setActionKind('QUOTE');
@@ -240,19 +240,4 @@ export function MemberCardsPage() {
       setActionBusy(false);
     }
   }
-}
-
-// M9：渲染期写 ref 是反模式（StrictMode 双渲染/行集合变化时 ref 可能指向旧实例）。
-// 将 ctx.reload 赋值移到 effect 提交后执行，使 ref 与最终提交的渲染一致。
-function ReloadSync({
-  reload,
-  onReload,
-}: {
-  reload: () => Promise<unknown>;
-  onReload: (reload: () => Promise<unknown>) => void;
-}) {
-  useEffect(() => {
-    onReload(reload);
-  }, [reload, onReload]);
-  return null;
 }

@@ -1,9 +1,11 @@
-import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveSimulatedDataDir } from './simulated-data.mjs';
+import { SIM_ADMIN_PASSWORD } from './lib/sim-admin.mjs';
+import { pickFreePort } from './lib/smoke-runtime.mjs';
+import { createDrill } from './lib/drill-runtime.mjs';
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const serverScript = path.join(appRoot, 'dist-electron', 'server.cjs');
@@ -13,10 +15,10 @@ const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-permission-smoke-'));
 const dataDir = path.join(tempRoot, 'data');
 const backupDir = path.join(dataDir, 'backups');
 const logDir = path.join(dataDir, 'logs');
-const port = 43000 + Math.floor(Math.random() * 1000);
+const port = await pickFreePort(43000, 43999);
 // 模拟库由 simulate:clinic-data 用固定默认密码生成；不读外层 V2_ADMIN_PASSWORD，
 // 否则并入 smoke:all 时会因外层 smoke 密码与库内管理员不一致而 401。
-const adminPassword = 'v2-sim-admin-password';
+const adminPassword = SIM_ADMIN_PASSWORD;
 
 const sourceSimDir = resolveSimulatedDataDir();
 if (!sourceSimDir) {
@@ -36,71 +38,28 @@ for (const suffix of ['', '-wal', '-shm']) {
   if (fs.existsSync(source)) fs.copyFileSync(source, path.join(dataDir, `v2.sqlite${suffix}`));
 }
 
-let apiProcess = null;
+const drill = createDrill({
+  appRoot,
+  serverScript,
+  legacyDb,
+  legacySchemaDir,
+  dataDir,
+  backupDir,
+  logDir,
+  port,
+  jwtSecret: 'permission-smoke-jwt-0123456789abcdef0123456789abcdef',
+  backupKey: 'permission-smoke-backup-key-0123456789abcdef',
+  adminPassword,
+  stdio: ['ignore', 'ignore', 'inherit'],
+  readyLabel: 'permission smoke',
+});
 
-function waitForApi(timeoutMs = 30_000) {
-  const startedAt = Date.now();
-  return new Promise((resolve, reject) => {
-    const attempt = async () => {
-      if (Date.now() - startedAt > timeoutMs) {
-        reject(new Error('API did not become ready during permission smoke'));
-        return;
-      }
-      try {
-        const response = await fetch(`http://127.0.0.1:${port}/api/v2/health`, { signal: AbortSignal.timeout(1000) });
-        if (response.ok) {
-          resolve();
-          return;
-        }
-      } catch {
-        // retry
-      }
-      setTimeout(() => void attempt(), 500);
-    };
-    void attempt();
-  });
-}
-
-function startApi() {
-  apiProcess = spawn(process.execPath, [serverScript], {
-    cwd: appRoot,
-    env: {
-      ...process.env,
-      V2_PORT: String(port),
-      V2_HOST: '127.0.0.1',
-      NODE_ENV: 'development',
-      V2_DATA_DIR: dataDir,
-      V2_BACKUP_DIR: backupDir,
-      V2_LOG_DIR: logDir,
-      V2_LEGACY_DB_PATH: legacyDb,
-      V2_LEGACY_SCHEMA_DIR: legacySchemaDir,
-      V2_JWT_SECRET: 'permission-smoke-jwt-0123456789abcdef0123456789abcdef',
-      V2_BACKUP_KEY: 'permission-smoke-backup-key-0123456789abcdef',
-      V2_ADMIN_PASSWORD: adminPassword,
-    },
-    stdio: ['ignore', 'ignore', 'pipe'],
-    windowsHide: true,
-  });
-}
-
-function stopApi() {
-  return new Promise((resolve) => {
-    if (!apiProcess || apiProcess.killed || apiProcess.exitCode !== null) {
-      resolve();
-      return;
-    }
-    apiProcess.once('exit', resolve);
-    apiProcess.kill();
-    setTimeout(() => {
-      if (apiProcess && apiProcess.exitCode === null) apiProcess.kill('SIGKILL');
-    }, 5000).unref();
-  });
-}
+const { spawnApi, stopApi, waitForApi, assert } = drill;
 
 async function rawRequest(pathname, options = {}, token = null) {
   const headers = { 'content-type': 'application/json', ...(options.headers ?? {}) };
   if (token) headers.authorization = `Bearer ${token}`;
-  const response = await fetch(`http://127.0.0.1:${port}/api/v2${pathname}`, { ...options, headers });
+  const response = await fetch(`${drill.base}${pathname}`, { ...options, headers });
   const text = await response.text();
   let body = null;
   try {
@@ -111,12 +70,8 @@ async function rawRequest(pathname, options = {}, token = null) {
   return { status: response.status, body };
 }
 
-function assert(condition, message) {
-  if (!condition) throw new Error(message);
-}
-
 try {
-  startApi();
+  spawnApi();
   await waitForApi();
   const bossLogin = await rawRequest('/auth/login', {
     method: 'POST',

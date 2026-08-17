@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
+import { X } from 'lucide-react';
 import { registerModalLayer } from '../lib/modal-a11y';
 
 const FOCUSABLE_SELECTOR =
@@ -40,6 +41,7 @@ export function Dialog({
     const modal = modalRef.current as HTMLDivElement;
     const cleanupInert = registerModalLayer(modal);
     const firstFocusable = modal.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
+    /* v8 ignore next -- 弹窗头部恒有关闭按钮，兜底聚焦不可达 */
     (firstFocusable ?? modal).focus();
     return () => {
       cleanupInert?.();
@@ -114,6 +116,9 @@ export function Dialog({
       >
         <div className="modal-head">
           <h2>{title}</h2>
+          <button type="button" className="modal-close" aria-label="关闭弹窗" onClick={requestClose}>
+            <X size={16} />
+          </button>
         </div>
         {children}
       </div>

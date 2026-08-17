@@ -21,6 +21,11 @@ const {
   API_HEARTBEAT_INTERVAL_MS,
 } = require('./constants.cjs');
 const API_CONSOLE_MAX_BYTES = 5 * 1024 * 1024;
+const API_HEALTH_CHECK_TIMEOUT_MS = 500;
+const API_HEALTH_RETRY_INTERVAL_MS = 400;
+const API_KILL_EXIT_GRACE_MS = 5_000;
+const API_SHUTDOWN_GRACE_MS = 1_500;
+const API_SHUTDOWN_KILL_EXIT_GRACE_MS = 200;
 const { buildApiChildEnv } = require('./api-env.cjs');
 const { crashLog, notify, sendApiStatus } = require('./logging.cjs');
 const { getOrCreateSecret } = require('./secrets.cjs');
@@ -68,7 +73,8 @@ function randomPort() {
 
 // Round7 M6：随机端口可能落入 Windows 排除端口保留段（README 已记录 3180
 // 的同类问题）或恰被其他进程占用。spawn 前先临时 bind 探测，失败换端口，
-// 最多尝试 10 次，避免 API 子进程 EADDRINUSE 后走重启退避、首次启动失败。
+// 最多尝试 10 次，显著降低（但不完全消除）API 子进程 EADDRINUSE 的概率：
+// 探测释放到子进程绑定之间存在 TOCTOU 窗口，被抢占时仍走重启退避兜底。
 function isPortFree(port) {
   return new Promise((resolve) => {
     const server = net.createServer();
@@ -84,7 +90,7 @@ async function pickFreePort() {
     const candidate = randomPort();
     if (await isPortFree(candidate)) return candidate;
   }
-  throw new Error('无法在 30000-50000 段找到可用端口（连续 10 次探测均被占用）');
+  throw new Error(`无法在 ${RANDOM_API_PORT_MIN}-${RANDOM_API_PORT_MAX} 段找到可用端口（连续 10 次探测均被占用）`);
 }
 
 function waitForApi(port, timeoutMs = API_READY_TIMEOUT_MS) {
@@ -93,7 +99,7 @@ function waitForApi(port, timeoutMs = API_READY_TIMEOUT_MS) {
     let lastError = null;
     const attempt = () => {
       const request = http.get(
-        { hostname: '127.0.0.1', port, path: '/api/v2/health', timeout: 500 },
+        { hostname: '127.0.0.1', port, path: '/api/v2/health', timeout: API_HEALTH_CHECK_TIMEOUT_MS },
         (response) => {
           response.resume();
           if (response.statusCode === 200) {
@@ -115,7 +121,7 @@ function waitForApi(port, timeoutMs = API_READY_TIMEOUT_MS) {
         reject(lastError || new Error('API did not become ready'));
         return;
       }
-      setTimeout(attempt, 400);
+      setTimeout(attempt, API_HEALTH_RETRY_INTERVAL_MS);
     };
     attempt();
   });
@@ -143,7 +149,13 @@ async function startApi() {
 async function doStartApi() {
   if (state.apiProcess && !state.apiProcess.killed) return state.apiPort;
   sweepStaleSecretFiles();
-  state.apiPort = await pickFreePort();
+  // H1：会话内重启（手动重启/崩溃自动恢复）优先复用上次端口——渲染层 meta CSP 的
+  // connect-src 在启动时按“当时端口”收紧为精确值，换端口会让所有请求被 CSP 拦截
+  // （渲染层只 resetApiBase，不重写 CSP）。仅当端口已被占用时才重新挑选。
+  // 首次启动（state.apiPort 为空）仍走随机挑选。
+  if (!state.apiPort || !(await isPortFree(state.apiPort))) {
+    state.apiPort = await pickFreePort();
+  }
   const userDataDir = app.getPath('userData');
   // S-L2（第七轮）：JWT/备份密钥不再经 spawn env 透传（Windows 上同用户进程
   // 可枚举子进程环境块），改为写入 os.tmpdir() 下随机名临时文件（mode 0o600，
@@ -152,16 +164,17 @@ async function doStartApi() {
   const jwtSecret = getOrCreateSecret();
   const backupKey = getOrCreateSecret('backup-key');
   const secretFilePath = path.join(os.tmpdir(), `v2-secrets-${crypto.randomUUID()}.json`);
-  // 微信 AppSecret 和首启管理密码也经 secret file 传给 API，避免出现在
-  // 子进程环境块中；生产打包版不注入 V2_ADMIN_PASSWORD（管理员已存在）。
+  // 微信 AppId/AppSecret 和首启管理密码也经 secret file 传给 API，避免出现在
+  // 子进程环境块中（Windows 同用户进程可枚举环境块）；AppId 只走这一条通道，
+  // 与 api-env.cjs 的白名单策略一致（env 不放行 V2_WECHAT_APP_ID）。
+  // 首启密码在打包版/开发版全新数据目录上均可经 secret file 引导创建初始
+  // 管理员，但绝不进入子进程 env。
   try {
   fs.writeFileSync(secretFilePath, JSON.stringify({
     jwt: jwtSecret,
     backupKey,
     wechatAppId: process.env.V2_WECHAT_APP_ID ?? undefined,
     wechatAppSecret: process.env.V2_WECHAT_APP_SECRET ?? undefined,
-    // 首次启动引导密码经 secret file 传给 API：不暴露在子进程环境块，
-    // 但仍支持打包版/开发版在全新数据目录上创建初始管理员。
     adminPassword: process.env.V2_ADMIN_PASSWORD ?? undefined,
   }), { mode: 0o600 });
   // LEGACY: 旧版 Prisma 时代的 SQLite 数据库与 schema 目录。
@@ -315,11 +328,14 @@ async function ensureApiServerRunning() {
   if (state.apiProcess && !state.apiProcess.killed) {
     const processToStop = state.apiProcess;
     processToStop.manualStop = true;
+    // E-1：重启前的停止窗口同样保留引用供 terminateApiSync 兜底。
+    state.stoppingProcess = processToStop;
     await new Promise((resolve) => {
       let settled = false;
       const done = () => {
         if (settled) return;
         settled = true;
+        if (state.stoppingProcess === processToStop) state.stoppingProcess = null;
         resolve();
       };
       processToStop.once('exit', done);
@@ -328,7 +344,7 @@ async function ensureApiServerRunning() {
       } catch {
         done();
       }
-      setTimeout(done, 5_000);
+      setTimeout(done, API_KILL_EXIT_GRACE_MS);
     });
   }
   state.apiProcess = null;
@@ -349,11 +365,14 @@ async function stopApi() {
   state.apiProcess = null;
   if (processToStop && !processToStop.killed) {
     processToStop.manualStop = true;
+    // E-1：宽限窗口内保留引用，terminateApiSync 仍可强杀；子进程退出后清掉。
+    state.stoppingProcess = processToStop;
     return new Promise((resolve) => {
       let settled = false;
       const done = () => {
         if (settled) return;
         settled = true;
+        if (state.stoppingProcess === processToStop) state.stoppingProcess = null;
         resolve();
       };
       processToStop.once('exit', done);
@@ -364,8 +383,8 @@ async function stopApi() {
       }
       setTimeout(() => {
         if (!processToStop.killed) processToStop.kill();
-        setTimeout(done, 200);
-      }, 1500);
+        setTimeout(done, API_SHUTDOWN_KILL_EXIT_GRACE_MS);
+      }, API_SHUTDOWN_GRACE_MS);
     });
   }
 }
@@ -402,7 +421,7 @@ function terminateApiSync() {
     clearInterval(state.apiHeartbeatTimer);
     state.apiHeartbeatTimer = null;
   }
-  const proc = state.apiProcess;
+  const proc = state.apiProcess ?? state.stoppingProcess;
   if (!proc || proc.killed || proc.pid == null) return;
   let killed = false;
   try {

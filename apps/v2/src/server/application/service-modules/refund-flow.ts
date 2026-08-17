@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
+import { keysetCondition, keysetOrder } from '../../infrastructure/keyset';
 import { trackResourceWrite } from '../../infrastructure/write-tracking';
 import type { AppContext } from '../../../domain/contracts';
 
@@ -24,7 +25,10 @@ interface RefundRow {
 export class RefundFlowService {
   constructor(private readonly db: Database.Database) {}
 
-  list(context: AppContext, options?: { page?: number; pageSize?: number }): Array<Record<string, unknown>> {
+  list(
+    context: AppContext,
+    options?: { page?: number; pageSize?: number; cursor?: string | null },
+  ): Array<Record<string, unknown>> {
     const pageRaw = Number(options?.page ?? 1);
     const pageSizeRaw = Number(options?.pageSize ?? 200);
     if (!Number.isFinite(pageRaw) || pageRaw < 1 || !Number.isInteger(pageRaw)) {
@@ -36,6 +40,10 @@ export class RefundFlowService {
     const page = Math.max(1, pageRaw);
     const pageSize = Math.min(200, Math.max(1, pageSizeRaw));
     const offset = (page - 1) * pageSize;
+    // S-2 keyset：两模式统一按 (createdAt DESC, id DESC) 排序，恒取 pageSize+1 行供路由生成 nextCursor。
+    const keyset = { columns: [{ column: 'r.createdAt', key: 'createdAt' }], idColumn: 'r.id', direction: 'DESC' as const };
+    const cursorCondition = keysetCondition(options?.cursor, keyset);
+    const hasCursor = cursorCondition.where !== '';
     // Refund 与 Charge/Patient 均有 clinicId，tenantAnd 需显式使用 Refund 列前缀。
     const rows = this.db.prepare(
       `SELECT r.id, r.amount, r.reason, r.status, r.createdAt, r.approvedAt, r.processedAt,
@@ -45,10 +53,10 @@ export class RefundFlowService {
        FROM Refund r
        LEFT JOIN Patient p ON p.id = r.patientId
        LEFT JOIN Charge c ON c.id = r.chargeId
-       WHERE r.deletedAt IS NULL${tenantAnd(context.clinicId, 'r.clinicId')}
-       ORDER BY r.createdAt DESC
-       LIMIT ? OFFSET ?`,
-    ).all(...tenantParams(context.clinicId), pageSize, offset);
+       WHERE r.deletedAt IS NULL${tenantAnd(context.clinicId, 'r.clinicId')}${cursorCondition.where}
+       ${keysetOrder(keyset)}
+       LIMIT ${pageSize + 1} OFFSET ${hasCursor ? 0 : offset}`,
+    ).all(...tenantParams(context.clinicId), ...cursorCondition.params);
     return rows as Array<Record<string, unknown>>;
   }
 

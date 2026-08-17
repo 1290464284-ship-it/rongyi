@@ -2,10 +2,8 @@ import { useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
 import { CrudPage } from '../../components/CrudPage';
-import { DataTable } from '../../components';
-import { formatMoney, toCents, centsToYuanString } from '../../lib/format';
+import { toCents, splitList } from '../../lib/format';
 import { errorMessage } from '../../lib/messages';
-import { useAsyncAction } from '../../hooks/use-async-action';
 import { useToast } from '../../lib/toast-context';
 import {
   type ProcessingFlowStatsData,
@@ -14,14 +12,14 @@ import {
   type ProcessingRow,
   type SettleStats,
 } from '../../processing-orders/types';
-import { buildValidItems, emptyProcessingForm, joinList, newItem, reconcileProcessingItems } from '../../processing-orders/items';
-import { splitList } from '../../lib/format';
-import { flowStatsColumns, processingColumns } from '../../processing-orders/columns';
+import { buildValidItems, emptyProcessingForm, reconcileProcessingItems } from '../../processing-orders/items';
+import { processingColumns } from '../../processing-orders/columns';
 import { ProcessingOrderFormFields } from '../../processing-orders/ProcessingOrderFormFields';
-import { transitionProcessingOrder } from '../../processing-orders/api';
-import { ProcessingStatusSelect } from '../../processing-orders/ProcessingStatusSelect';
 import { ProcessingSettleDialog } from './ProcessingSettleDialog';
 import { ProcessingFlowDialog } from './ProcessingFlowDialog';
+import { ProcessingRowActions } from './ProcessingRowActions';
+import { ProcessingFlowStatsSection, ProcessingSettleSummary } from './processing-stats';
+import { rowToProcessingForm } from './processing-order-form';
 
 export function ProcessingOrdersPage() {
   const { showToast } = useToast();
@@ -170,18 +168,14 @@ export function ProcessingOrdersPage() {
 
   return (
     <>
-      {stats.data && (
-        <div className="settle-summary">
-          <span>未结算 {stats.data.unsettled?.count ?? 0} 单（金额 {formatMoney(stats.data.unsettled?.feeTotal ?? 0)}）</span>
-          <span>已结算 {stats.data.settled?.count ?? 0} 单（金额 {formatMoney(stats.data.settled?.amountTotal ?? 0)}）</span>
-        </div>
-      )}
+      {stats.data && <ProcessingSettleSummary stats={stats.data} />}
       <CrudPage<ProcessingRow, ProcessingOrderForm>
         title="加工单管理"
         createLabel="新建加工单"
         emptyMessage="暂无加工单"
         queryKey={['processing-orders']}
         endpoint="/resources/processingOrders"
+        paged
         initialForm={() => {
           editingIdRef.current = null;
           editingStatusRef.current = null;
@@ -192,15 +186,7 @@ export function ProcessingOrdersPage() {
           editingIdRef.current = String(row.id);
           editingStatusRef.current = String(row.status ?? '');
           itemsLoadedRef.current = false;
-          return {
-            patientId: String(row.patientId ?? ''),
-            doctorId: String(row.doctorId ?? ''),
-            number: String(row.number ?? ''),
-            shade: String(row.shade ?? ''),
-            teethNumbers: joinList(row.teethNumbers),
-            totalFee: centsToYuanString(row.totalFee),
-            items: [newItem()],
-          };
+          return rowToProcessingForm(row);
         }}
         validate={(form) => {
           if (editingIdRef.current && !itemsLoadedRef.current) {
@@ -262,23 +248,7 @@ export function ProcessingOrdersPage() {
         canEdit
         canDelete
         rowActions={(row, ctx) => (
-          <>
-            <button disabled={ctx.stale} onClick={() => onRowFlow(ctx, row)}>流程</button>
-            <ProcessingStatusSelect
-              rowId={row.id}
-              disabled={ctx.stale}
-              onTransition={(id, status) => {
-                /* v8 ignore next -- 状态选择器在 stale 期间 disabled */
-                if (ctx.stale) return;
-                transitionProcessingOrder(showToast, ctx.reload, id, status);
-              }}
-            />
-            {row.settleStatus === 'SETTLED' ? (
-              <UnsettleButton disabled={ctx.stale} onDone={() => unsettleProcessingOrder(row, ctx.reload)} />
-            ) : (
-              <button disabled={ctx.stale} onClick={() => onRowSettle(ctx, row)}>结算</button>
-            )}
-          </>
+          <ProcessingRowActions row={row} ctx={ctx} onFlow={onRowFlow} onSettle={onRowSettle} onUnsettle={unsettleProcessingOrder} />
         )}
         renderForm={(ctx) => (
           <ProcessingOrderFormFields
@@ -290,19 +260,13 @@ export function ProcessingOrdersPage() {
           />
         )}
       />
-      <section>
-        <h2>流程统计</h2>
-        <div className="inline-form">
-          <input aria-label="统计开始日期" type="date" value={statsFrom} onChange={(event) => setStatsFrom(event.target.value)} />
-          <input aria-label="统计结束日期" type="date" value={statsTo} onChange={(event) => setStatsTo(event.target.value)} />
-        </div>
-        <DataTable
-          columns={flowStatsColumns}
-          rows={flowStats.data?.steps ?? []}
-          keyField="stepId"
-          emptyText="暂无流程统计数据"
-        />
-      </section>
+      <ProcessingFlowStatsSection
+        statsFrom={statsFrom}
+        statsTo={statsTo}
+        setStatsFrom={setStatsFrom}
+        setStatsTo={setStatsTo}
+        flowStats={flowStats}
+      />
       <ProcessingSettleDialog
         key={settleTarget?.id ?? 'closed'}
         target={settleTarget}
@@ -325,16 +289,5 @@ export function ProcessingOrdersPage() {
         onAdjust={adjustStep}
       />
     </>
-  );
-}
-
-/** 行内“撤销结算”按钮：busy 期间禁用，防止双击重复撤销。 */
-function UnsettleButton({ onDone, disabled }: { onDone: () => Promise<void>; disabled?: boolean }) {
-  const { busy, run } = useAsyncAction();
-  return (
-    /* v8 ignore next -- disabled 时浏览器不派发点击，守卫为防御冗余 */
-    <button disabled={busy || disabled} onClick={() => { if (disabled) return; run(onDone); }}>
-      {busy ? '撤销中...' : '撤销结算'}
-    </button>
   );
 }

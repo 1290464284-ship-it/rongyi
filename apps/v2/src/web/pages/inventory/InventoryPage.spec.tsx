@@ -236,7 +236,7 @@ describe('InventoryPage', () => {
       if (path === '/inventory/low-stock') return [];
       if (path === '/inventory/expiring?days=30') return [];
       if (path.startsWith('/resources/suppliers')) return { items: [{ id: 's-1', name: '供应商甲' }], total: 1 };
-      if (path === '/inventory-batches?itemId=i-batch') {
+      if (path === '/inventory-batches?itemId=i-batch&page=1&pageSize=20') {
         return {
           batches: [
             { id: 'b-1', batchNo: 'B-001', productionDate: '2026-07-01', expiryDate: '2026-09-01', initialQuantity: 10, remainingQuantity: 10 },
@@ -503,7 +503,7 @@ describe('InventoryPage', () => {
       if (path === '/inventory/low-stock') return [];
       if (path === '/inventory/expiring?days=30') return [];
       if (path.startsWith('/resources/suppliers')) return { items: [{ id: 's-1', name: '供应商甲' }], total: 1 };
-      if (path === '/inventory-batches?itemId=i-batch') {
+      if (path === '/inventory-batches?itemId=i-batch&page=1&pageSize=20') {
         return {
           batches: [
             { id: 'b-1', batchNo: 'B-001', productionDate: '2026-07-01', expiryDate: '2026-09-01', initialQuantity: 10, remainingQuantity: 10, supplierId: 's-1' },
@@ -548,7 +548,7 @@ describe('InventoryPage', () => {
       if (path === '/inventory/low-stock') return [];
       if (path === '/inventory/expiring?days=30') return [];
       if (path.startsWith('/resources/suppliers')) return { items: [], total: 0 };
-      if (path === '/inventory-batches?itemId=i-batch') {
+      if (path === '/inventory-batches?itemId=i-batch&page=1&pageSize=20') {
         return {
           batches: [
             { id: 'b-1', batchNo: 'B-001', productionDate: '2026-07-01', expiryDate: '2026-09-01', initialQuantity: 10, remainingQuantity: 0 },
@@ -723,7 +723,7 @@ describe('InventoryPage', () => {
       if (path === '/inventory/low-stock') return [];
       if (path === '/inventory/expiring?days=30') return [];
       if (path.startsWith('/resources/suppliers')) return { items: [], total: 0 };
-      if (path === '/inventory-batches?itemId=i-batch') {
+      if (path === '/inventory-batches?itemId=i-batch&page=1&pageSize=20') {
         return {
           batches: [
             { id: 'b-1', batchNo: 'B-001', productionDate: '2026-07-01', expiryDate: '2026-09-01', initialQuantity: 10, remainingQuantity: 10 },
@@ -794,7 +794,7 @@ describe('InventoryPage', () => {
       if (path === '/inventory/low-stock') return [];
       if (path === '/inventory/expiring?days=30') return [];
       if (path.startsWith('/resources/suppliers')) return { items: [], total: 0 };
-      if (path === '/inventory-batches?itemId=i-batch') {
+      if (path === '/inventory-batches?itemId=i-batch&page=1&pageSize=20') {
         return {
           batches: [
             { id: 'b-9', batchNo: null, productionDate: null, expiryDate: null, initialQuantity: 10, remainingQuantity: 10, supplierId: null },
@@ -903,7 +903,7 @@ describe('InventoryPage', () => {
       if (path === '/inventory/low-stock') return [];
       if (path === '/inventory/expiring?days=30') return [];
       if (path.startsWith('/resources/suppliers')) return { items: [], total: 0 };
-      if (path === '/inventory-batches?itemId=i-1') {
+      if (path === '/inventory-batches?itemId=i-1&page=1&pageSize=20') {
         return { batches: [{ id: 'b-1', batchNo: 'B-1', productionDate: '2026-07-01', expiryDate: '2026-09-01', initialQuantity: 10, remainingQuantity: 10 }], expiring: [] };
       }
       if (path.startsWith('/inventory-batches')) return { batches: [], expiring: [] };
@@ -938,7 +938,7 @@ describe('InventoryPage', () => {
       if (path === '/inventory/expiring?days=30') {
         return { items: [{ id: 'e1', name: null, code: null, expireDate: null, stock: null }], total: 1 };
       }
-      if (path === '/inventory-batches?itemId=i-1') {
+      if (path === '/inventory-batches?itemId=i-1&page=1&pageSize=20') {
         return {
           batches: [{ id: 'b-1', batchNo: null, productionDate: null, expiryDate: null, initialQuantity: null, remainingQuantity: null }],
           expiring: [],
@@ -976,7 +976,7 @@ describe('InventoryPage', () => {
       if (path === '/inventory/low-stock') return [];
       if (path === '/inventory/expiring?days=30') return [];
       if (path.startsWith('/resources/suppliers')) return { items: [], total: 0 };
-      if (path === '/inventory-batches?itemId=i-batch') {
+      if (path === '/inventory-batches?itemId=i-batch&page=1&pageSize=20') {
         return {
           batches: [
             { id: 'b-1', batchNo: 'B-001', productionDate: '2026-07-01', expiryDate: '2026-09-01', initialQuantity: 10, remainingQuantity: 10 },
@@ -1013,7 +1013,7 @@ describe('InventoryPage', () => {
       if (path === '/inventory/low-stock') return [];
       if (path === '/inventory/expiring?days=30') return [];
       if (path.startsWith('/resources/suppliers')) return { items: [], total: 0 };
-      if (path === '/inventory-batches?itemId=i-batch') {
+      if (path === '/inventory-batches?itemId=i-batch&page=1&pageSize=20') {
         return { batches: [{ id: 'b-1', batchNo: 'B-001', initialQuantity: 10, remainingQuantity: 10 }], expiring: [] };
       }
       if (path.startsWith('/inventory-batches')) return { batches: [], expiring: [] };
@@ -1106,7 +1106,7 @@ describe('InventoryPage', () => {
       if (path === '/inventory/low-stock') return [];
       if (path === '/inventory/expiring?days=30') return [];
       if (path.startsWith('/resources/suppliers')) return { items: [], total: 0 };
-      if (path === '/inventory-batches?itemId=i-batch') {
+      if (path === '/inventory-batches?itemId=i-batch&page=1&pageSize=20') {
         return {
           batches: [{ id: 'b-1', batchNo: 'B-001', productionDate: '2026-07-01', expiryDate: '2026-09-01', initialQuantity: 10, remainingQuantity: 10 }],
           expiring: [],
@@ -1143,7 +1143,7 @@ describe('InventoryPage', () => {
       if (path === '/inventory/low-stock') return [];
       if (path === '/inventory/expiring?days=30') return [];
       if (path.startsWith('/resources/suppliers')) return { items: [], total: 0 };
-      if (path === '/inventory-batches?itemId=i-batch') {
+      if (path === '/inventory-batches?itemId=i-batch&page=1&pageSize=20') {
         return {
           batches: [{ id: 'b-1', batchNo: 'B-001', productionDate: '2026-07-01', expiryDate: '2026-09-01', initialQuantity: 10, remainingQuantity: 10 }],
           expiring: [],
@@ -1236,7 +1236,7 @@ describe('InventoryPage', () => {
       }
       if (path === '/inventory/low-stock') return [];
       if (path === '/inventory/expiring?days=30') return [];
-      if (path === '/inventory-batches?itemId=i-1') {
+      if (path === '/inventory-batches?itemId=i-1&page=1&pageSize=20') {
         return {
           batches: [{ id: 'b-1', batchNo: 'B-1', initialQuantity: null, remainingQuantity: null }],
           expiring: [],
@@ -1334,7 +1334,7 @@ describe('InventoryPage', () => {
       if (path === '/inventory/low-stock') return [];
       if (path === '/inventory/expiring?days=30') return [];
       if (path.startsWith('/resources/suppliers')) return { items: [], total: 0 };
-      if (path === '/inventory-batches?itemId=i-batch') {
+      if (path === '/inventory-batches?itemId=i-batch&page=1&pageSize=20') {
         return { batches: [{ id: 'b-1', batchNo: 'B-001', initialQuantity: 10, remainingQuantity: 10 }], expiring: [] };
       }
       if (path === '/inventory-batches/b-1' && String(init?.method ?? 'GET').toUpperCase() === 'PATCH') {
@@ -1369,7 +1369,7 @@ describe('InventoryPage', () => {
       if (path === '/inventory/low-stock') return [];
       if (path === '/inventory/expiring?days=30') return [];
       if (path.startsWith('/resources/suppliers')) return { items: [], total: 0 };
-      if (path === '/inventory-batches?itemId=i-batch') {
+      if (path === '/inventory-batches?itemId=i-batch&page=1&pageSize=20') {
         return { batches: [{ id: 'b-1', batchNo: 'B-001', initialQuantity: 10, remainingQuantity: 10 }], expiring: [] };
       }
       if (path === '/inventory/transactions' && String(init?.method ?? 'GET').toUpperCase() === 'POST') {

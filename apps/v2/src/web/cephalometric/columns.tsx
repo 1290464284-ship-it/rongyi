@@ -1,11 +1,19 @@
 import { SignedImage, type DataTableColumn } from '../components';
+import { CLINICAL_STATUS_LABELS } from '../lib/labels';
 import { REPORT_STATUS_LABELS } from './constants';
 import type { CephalometricRow } from './types';
 
 export function cephalometricColumns(): DataTableColumn<CephalometricRow>[] {
   return [
     { key: 'patientId', label: '患者', render: (row) => row.patientIdLabel ?? row.patientId ?? '' },
-    { key: 'status', label: '状态' },
+    {
+      key: 'status',
+      label: '状态',
+      render: (row) => {
+        const value = String(row.status ?? '');
+        return CLINICAL_STATUS_LABELS[value] ?? value;
+      },
+    },
     {
       key: 'reportStatus',
       label: '报告状态',

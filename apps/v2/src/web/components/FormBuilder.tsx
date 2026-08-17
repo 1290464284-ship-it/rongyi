@@ -1,10 +1,7 @@
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { apiRequest } from '../lib/api';
-import { useDebouncedValue } from '../hooks/use-debounce';
 import { friendlyError } from '../lib/messages';
-import type { Page, ResourceField } from '../lib/types';
+import type { ResourceField } from '../lib/types';
 import { MissingSelectOption } from '../components';
+import { useRemoteSearch, type RemoteSearchRow } from '../hooks/use-remote-search';
 
 interface FormBuilderProps {
   fields: ResourceField[];
@@ -92,44 +89,26 @@ function RelationSelect({
   required?: boolean;
   onChange: (value: unknown) => void;
 }) {
-  const [search, setSearch] = useState('');
-  const [page, setPage] = useState(1);
-  const [accumulated, setAccumulated] = useState<Record<string, unknown>[]>([]);
-  const debouncedSearch = useDebouncedValue(search, 300);
-  const queryKey = ['relation-options', relation.resource, debouncedSearch, page];
-  const queryKeyJson = JSON.stringify(queryKey);
-  const query = useQuery({
-    queryKey,
-    queryFn: () => apiRequest<Page<Record<string, unknown>>>(
-      `/resources/${relation.resource}?page=${page}&pageSize=50${debouncedSearch ? `&search=${encodeURIComponent(debouncedSearch)}` : ''}`,
-    ),
-    placeholderData: (previous) => previous,
+  const {
+    search,
+    setSearch,
+    page,
+    loadMore,
+    loaded,
+    isFetching,
+    error,
+    canLoadMore,
+    loadCapped,
+  } = useRemoteSearch<RemoteSearchRow>({
+    resource: relation.resource,
+    pageSize: 50,
+    keepPreviousData: true,
+    queryKeyPrefix: 'relation-options',
+    mergeMode: 'replace',
+    canLoadMore: ({ page, pageSize, total }) => page * pageSize < total,
   });
-  // Accumulate options across pages so「加载更多」never drops previously selected rows.
-  // 渲染期调整（React 官方模式）：仅同一查询键的新数据到达时合并，搜索变化后的旧数据不再合并回来。
-  const [prevSnapshot, setPrevSnapshot] = useState<{ key: string; data: Page<Record<string, unknown>> | undefined } | undefined>(undefined);
-  if (!prevSnapshot || prevSnapshot.key !== queryKeyJson || prevSnapshot.data !== query.data) {
-    const previous = prevSnapshot;
-    setPrevSnapshot({ key: queryKeyJson, data: query.data });
-    if ((previous === undefined || previous.key === queryKeyJson) && query.data) {
-      const incoming = query.data.items;
-      if (incoming) {
-      setAccumulated((current) => {
-        if (page === 1 || current.length === 0) return incoming;
-        const seen = new Set(current.map((item) => String(item.id)));
-        const fresh = incoming.filter((item) => !seen.has(String(item.id)));
-        return fresh.length > 0 ? [...current, ...fresh] : current;
-      });
-      }
-    }
-  }
-  const items = accumulated;
-  const total = query.isPlaceholderData ? accumulated.length : (query.data?.total ?? accumulated.length);
-  const MAX_LOAD_PAGES = 10;
-  const canLoadMore = page * 50 < total;
-  const loadCapped = canLoadMore && page >= MAX_LOAD_PAGES;
   const selectedMissing = value !== undefined && value !== null && String(value) !== ''
-    && !items.some((item) => String(item.id) === String(value));
+    && !loaded.some((item) => String(item.id) === String(value));
 
   return (
     <>
@@ -139,15 +118,11 @@ function RelationSelect({
         aria-label={`搜索${relation.resource}`}
         placeholder="搜索关联记录"
         value={search}
-        onChange={(event) => {
-          setSearch(event.target.value);
-          setPage(1);
-          setAccumulated([]);
-        }}
+        onChange={(event) => setSearch(event.target.value)}
       />
       <select id={fieldId} value={String(value ?? '')} required={required} onChange={(event) => onChange(event.target.value)}>
         <option value="">请选择...</option>
-        {items.map((item) => (
+        {loaded.map((item) => (
           <option key={String(item.id)} value={String(item.id)}>{String(item[relation.labelField] ?? item.id)}</option>
         ))}
         {selectedMissing && <MissingSelectOption value={value} />}
@@ -155,11 +130,11 @@ function RelationSelect({
       {canLoadMore && (loadCapped ? (
         <span className="relation-load-cap">数据较多，仅展示前 {page * 50} 条，请使用搜索筛选</span>
       ) : (
-        <button type="button" className="relation-load-more" disabled={query.isFetching} onClick={() => setPage((current) => current + 1)}>
-          {query.isFetching ? '加载中...' : '加载更多'}
+        <button type="button" className="relation-load-more" disabled={isFetching} onClick={loadMore}>
+          {isFetching ? '加载中...' : '加载更多'}
         </button>
       ))}
-      {query.error && <span className="error">{friendlyError(query.error)}</span>}
+      {error && <span className="error">{friendlyError(error)}</span>}
     </>
   );
 }

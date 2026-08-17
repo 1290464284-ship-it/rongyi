@@ -1,52 +1,14 @@
 import { useRef, useState, type FormEvent } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
-import { ConfirmDialog, DataTable, LoadingState, PageError, type DataTableColumn } from '../../components';
-import { centsToYuanString, formatMoney, toCents } from '../../lib/format';
+import { ConfirmDialog, DataTable, LoadingState, PageError } from '../../components';
+import { centsToYuanString, toCents } from '../../lib/format';
 import { errorMessage } from '../../lib/messages';
 import { useToast } from '../../lib/toast-context';
-
-interface RuleRow extends Record<string, unknown> {
-  id: string;
-  name: string;
-  category: string | null;
-  costType: string | null;
-  rateType: 'PERCENT' | 'FIXED';
-  rate: number;
-  doctorId: string | null;
-  enabled: number;
-}
-
-interface RuleForm {
-  name: string;
-  category: string;
-  costType: string;
-  rateType: 'PERCENT' | 'FIXED';
-  rate: string;
-  doctorId: string;
-  enabled: boolean;
-}
-
-interface StatementRow extends Record<string, unknown> {
-  id: string;
-  period: string;
-  doctorId: string;
-  doctorName: string | null;
-  totalCharged: number;
-  totalCommission: number;
-  breakdown: Array<{ category: string; costType: string; charged: number; commission: number }>;
-  calculatedAt: string;
-}
-
-const emptyForm: RuleForm = {
-  name: '',
-  category: '',
-  costType: '',
-  rateType: 'PERCENT',
-  rate: '10',
-  doctorId: '',
-  enabled: true,
-};
+import { useDoctors } from '../../hooks/use-doctors';
+import { ruleColumns, statementColumns } from './commission-columns';
+import { CommissionRuleForm } from './CommissionRuleForm';
+import { emptyForm, type RuleForm, type RuleRow, type StatementRow } from './commission-types';
 
 export function CommissionPage() {
   const { showToast } = useToast();
@@ -64,10 +26,7 @@ export function CommissionPage() {
     queryKey: ['commission-rules'],
     queryFn: () => apiRequest<RuleRow[]>('/commission/rules'),
   });
-  const doctors = useQuery({
-    queryKey: ['commission-doctors'],
-    queryFn: () => apiRequest<Array<Record<string, unknown>>>('/doctors'),
-  });
+  const doctors = useDoctors();
   const statements = useQuery({
     queryKey: ['commission-statements', period],
     queryFn: () => apiRequest<StatementRow[]>(`/commission/statements?period=${encodeURIComponent(period)}`),
@@ -175,55 +134,6 @@ export function CommissionPage() {
     }
   }
 
-  const ruleColumns: DataTableColumn<RuleRow>[] = [
-    { key: 'name', label: '规则名称' },
-    {
-      key: 'scope',
-      label: '适用范围',
-      render: (row) => [
-        row.category ? `分类 ${row.category}` : '全部分类',
-        row.costType ? (row.costType === 'SERVICE' ? '技术服务' : '材料耗材') : '',
-        row.doctorId ? '指定医生' : '默认',
-      ].filter(Boolean).join(' / '),
-    },
-    {
-      key: 'rate',
-      label: '提成',
-      render: (row) => (
-        row.rateType === 'PERCENT'
-          ? `${Math.round(Number(row.rate ?? 0) / 100)}%`
-          : `${formatMoney(row.rate)}/单`
-      ),
-    },
-    { key: 'enabled', label: '状态', render: (row) => (Number(row.enabled) === 1 ? '启用' : '停用') },
-    {
-      key: 'actions',
-      label: '操作',
-      render: (row) => (
-        <>
-          <button type="button" onClick={() => openEdit(row)}>编辑</button>
-          <button type="button" className="danger" onClick={() => setDeleteTarget(row)}>删除</button>
-        </>
-      ),
-    },
-  ];
-
-  const statementColumns: DataTableColumn<StatementRow>[] = [
-    { key: 'doctorName', label: '医生', render: (row) => String(row.doctorName ?? row.doctorId ?? '') },
-    { key: 'totalCharged', label: '计提升成金额', render: (row) => formatMoney(row.totalCharged) },
-    { key: 'totalCommission', label: '提成金额', render: (row) => formatMoney(row.totalCommission) },
-    { key: 'calculatedAt', label: '计算时间' },
-    {
-      key: 'breakdown',
-      label: '明细',
-      render: (row) => (
-        <span>
-          {row.breakdown.map((entry) => `${entry.category}(${formatMoney(entry.commission)})`).join('，') || '—'}
-        </span>
-      ),
-    },
-  ];
-
   // TanStack Query v5 将 data 为 undefined 的查询标记为 errored，页面在此之前已落入
   // PageError 分支，`?? []` 仅为类型兜底，不可达。
   /* v8 ignore next -- 见上：undefined 数据恒走 error 分支，空值兜底不可达 */
@@ -236,73 +146,22 @@ export function CommissionPage() {
       <div className="page-head"><h1>提成规则</h1></div>
       <section className="card">
         <h2>{editingId ? '编辑提成规则' : '新增提成规则'}</h2>
-        <form className="form-grid" onSubmit={(event) => void submit(event)}>
-          <label>
-            规则名称
-            <input aria-label="规则名称" value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="如：技术服务 10%" />
-          </label>
-          <label>
-            分类
-            <select aria-label="规则分类" value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value })}>
-              <option value="">全部分类</option>
-              {(categories.data?.items ?? []).map((category) => (
-                <option key={String(category.id)} value={String(category.name ?? category.id)}>
-                  {String(category.name ?? category.id)}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            成本类型
-            <select aria-label="成本类型" value={form.costType} onChange={(event) => setForm({ ...form, costType: event.target.value })}>
-              <option value="">不限</option>
-              <option value="SERVICE">技术服务</option>
-              <option value="MATERIAL">材料耗材</option>
-            </select>
-          </label>
-          <label>
-            提成方式
-            <select aria-label="提成方式" value={form.rateType} onChange={(event) => setForm({ ...form, rateType: event.target.value as 'PERCENT' | 'FIXED' })}>
-              <option value="PERCENT">按比例（%）</option>
-              <option value="FIXED">固定金额（元/单）</option>
-            </select>
-          </label>
-          <label>
-            {form.rateType === 'PERCENT' ? '比例（%）' : '固定金额（元）'}
-            <input
-              aria-label="提成值"
-              type="number"
-              min="0"
-              value={form.rate}
-              onChange={(event) => setForm({ ...form, rate: event.target.value })}
-            />
-          </label>
-          <label>
-            医生
-            <select aria-label="适用医生" value={form.doctorId} onChange={(event) => setForm({ ...form, doctorId: event.target.value })}>
-              <option value="">默认（所有医生）</option>
-              {(doctors.data ?? []).map((doctor) => (
-                <option key={String(doctor.id)} value={String(doctor.id)}>{String(doctor.name ?? doctor.id)}</option>
-              ))}
-            </select>
-          </label>
-          <label className="inline-label">
-            <input aria-label="启用规则" type="checkbox" checked={form.enabled} onChange={(event) => setForm({ ...form, enabled: event.target.checked })} />
-            启用
-          </label>
-          <div className="modal-actions">
-            {editingId && (
-              <button type="button" onClick={() => { setEditingId(null); setForm(emptyForm); }}>取消编辑</button>
-            )}
-            <button type="submit" disabled={busy}>{busy ? '保存中…' : editingId ? '保存修改' : '新增规则'}</button>
-          </div>
-        </form>
+        <CommissionRuleForm
+          form={form}
+          setForm={setForm}
+          editingId={editingId}
+          categories={categories}
+          doctors={doctors}
+          busy={busy}
+          onSubmit={(event) => void submit(event)}
+          onCancelEdit={() => { setEditingId(null); setForm(emptyForm); }}
+        />
         {rules.isLoading ? (
           <LoadingState label="加载规则…" />
         ) : rules.error ? (
           <PageError message={errorMessage(rules.error, '加载提成规则失败')} />
         ) : (
-          <DataTable columns={ruleColumns} rows={ruleRows} keyField="id" emptyText="暂无提成规则" />
+          <DataTable columns={ruleColumns({ onEdit: openEdit, onDelete: setDeleteTarget })} rows={ruleRows} keyField="id" emptyText="暂无提成规则" />
         )}
       </section>
 

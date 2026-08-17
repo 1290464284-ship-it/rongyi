@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ClinicOverviewPage } from './ClinicOverviewPage';
 import { apiRequest } from '../../lib/api';
@@ -31,10 +31,12 @@ describe('ClinicOverviewPage', () => {
 
     render(<ClinicOverviewPage />, { wrapper });
     expect(await screen.findByText('Clinic A')).toBeDefined();
-    expect(screen.getByText('患者：4')).toBeDefined();
-    expect(screen.getByText('预约：5')).toBeDefined();
-    expect(screen.getByText('已收：¥10.00')).toBeDefined();
-    expect(screen.getByText('未收：¥2.00')).toBeDefined();
+    // 统计卡（stat-cards）口径：数值与标签分离渲染
+    const cards = document.querySelector('.stat-cards') as HTMLElement;
+    expect(within(cards).getByText('4')).toBeDefined();
+    expect(within(cards).getByText('5')).toBeDefined();
+    expect(within(cards).getByText('¥10.00')).toBeDefined();
+    expect(within(cards).getByText('¥2.00')).toBeDefined();
   });
 
   it('renders errors and empty states', async () => {
@@ -51,7 +53,8 @@ describe('ClinicOverviewPage', () => {
     vi.mocked(apiRequest).mockResolvedValueOnce([{ clinicId: 'clinic-min' }]);
     render(<ClinicOverviewPage />, { wrapper });
     expect(await screen.findByText('clinic-min')).toBeDefined();
-    expect(screen.getByText('患者：0')).toBeDefined();
+    const cards = document.querySelector('.stat-cards') as HTMLElement;
+    expect(within(cards).getAllByText('0').length).toBeGreaterThan(0);
 
     cleanup();
     vi.mocked(apiRequest).mockResolvedValueOnce(undefined);
@@ -67,7 +70,9 @@ describe('ClinicOverviewPage', () => {
   it('falls back to an empty name when a clinic has neither name nor id', async () => {
     vi.mocked(apiRequest).mockResolvedValue([{ patients: 1 }]);
     render(<ClinicOverviewPage />, { wrapper });
-    expect(await screen.findByText('患者：1')).toBeDefined();
+    await waitFor(() => expect(document.querySelector('.stat-cards')).not.toBeNull());
+    const cards = document.querySelector('.stat-cards') as HTMLElement;
+    expect(within(cards).getByText('1')).toBeDefined();
     const table = document.querySelector('.data-table') ?? document.body;
     expect(table.textContent).toContain('诊所');
   });

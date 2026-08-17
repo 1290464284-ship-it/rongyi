@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../lib/api';
-import { Dialog } from '../components';
+import { Dialog, LoadingState } from '../components';
 import { formatDateTime } from '../lib/format';
 import { DENTITION_LABELS, FOLLOW_UP_STATUS_LABELS, STATUS_LABELS } from './constants';
 import type { FirstExamHistoryItem, FirstExamRow } from './types';
@@ -18,7 +18,7 @@ export function HistoryDialog({ row, onClose }: { row: FirstExamRow; onClose: ()
       {!row.patientId ? (
         <p>该记录缺少患者信息，无法查看历史</p>
       ) : historyQuery.isLoading ? (
-        <p>加载中...</p>
+        <LoadingState />
       ) : items.length === 0 ? (
         <p>暂无历史记录</p>
       ) : (
@@ -57,7 +57,7 @@ export function HistoryDialog({ row, onClose }: { row: FirstExamRow; onClose: ()
         </table>
       )}
       <div className="modal-actions">
-        <button type="button" onClick={onClose}>关闭</button>
+        <button type="button" className="btn-secondary" onClick={onClose}>关闭</button>
       </div>
     </Dialog>
   );

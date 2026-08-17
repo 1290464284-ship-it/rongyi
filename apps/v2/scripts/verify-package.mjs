@@ -47,7 +47,13 @@ if (fs.existsSync(unpackedDir)) {
       process.exit(1);
     }
   }
-  if (!fs.existsSync(legacySchema) || !fs.readdirSync(legacySchema).some((name) => name.endsWith('.tables.ts'))) {
+  // E-5 裁剪（2026-08-17）：打包内仅携带 legacy-schema.generated.sql（运行时首选），
+  // .tables.ts 仅是缺生成文件时的源码回退，不再打包。
+  const hasPackagedSchema = fs.existsSync(legacySchema) && (
+    fs.readdirSync(legacySchema).some((name) => name.endsWith('.tables.ts')) ||
+    fs.readdirSync(legacySchema).some((name) => name === 'legacy-schema.generated.sql')
+  );
+  if (!hasPackagedSchema) {
     console.error(`missing packaged legacy schema: ${legacySchema}`);
     process.exit(1);
   }

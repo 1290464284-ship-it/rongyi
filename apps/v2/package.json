@@ -1,6 +1,6 @@
 {
   "name": "@dental/v2",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "description": "Dental Clinic V2 desktop application",
   "author": "Dental Clinic V2 Team",
   "private": true,
@@ -32,10 +32,17 @@
     "test:flaky:quarantine": "node scripts/flaky-quarantine-manager.mjs",
     "test:quality-score": "node scripts/quality-score.mjs",
     "v8-ignore:report": "node scripts/v8-ignore-report.mjs",
-    "test:coverage": "vitest run --coverage",
+    "test:coverage": "vitest run --coverage --config vite.coverage.config.ts",
     "test:coverage:web": "vitest run src/web --coverage --config vite.web-coverage.config.ts",
     "smoke:api": "node scripts/api-smoke.mjs",
     "smoke:ui": "node scripts/ui-smoke.mjs",
+    "shots:ui-baseline": "node scripts/ui-baseline-shots.mjs",
+    "shots:ui-diff": "node scripts/ui-baseline-diff.mjs",
+    "shots:ui-band": "node scripts/ui-band-analysis.mjs",
+    "shots:a1-probe": "node scripts/a1-probe.mjs",
+    "shots:ui-viewport": "node scripts/ui-viewport-check.mjs",
+    "verify:desktop-sync": "node scripts/verify-desktop-sync.mjs",
+    "styles:tokenize": "node scripts/tokenize-styles.mjs",
     "smoke:electron": "node scripts/electron-smoke.mjs",
     "smoke:packaged-ui": "node scripts/packaged-ui-smoke.mjs",
     "smoke:packaged-ui-simulated": "node scripts/packaged-ui-simulated-smoke.mjs",
@@ -89,23 +96,19 @@
     "clean:artifacts": "node scripts/clean-artifacts.mjs"
   },
   "dependencies": {
-    "@tanstack/react-query": "^5.101.4",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^13.0.3",
     "cors": "^2.8.5",
     "electron-updater": "^6.3.0",
     "express": "^5.2.1",
     "helmet": "^8.3.0",
-    "jsonwebtoken": "^9.0.2",
-    "lucide-react": "^1.31.0",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8",
-    "react-router": "^8.3.0"
+    "jsonwebtoken": "^9.0.2"
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
     "@stryker-mutator/core": "^9.6.1",
     "@stryker-mutator/vitest-runner": "^9.6.1",
+    "@tanstack/react-query": "^5.101.4",
     "@testing-library/react": "^16.3.2",
     "@types/better-sqlite3": "^9.6.0",
     "@types/cors": "^2.8.19",
@@ -127,6 +130,10 @@
     "fast-check": "^4.9.0",
     "jsdom": "^30.0.1",
     "knip": "^6.32.1",
+    "lucide-react": "^1.31.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-router": "^8.3.0",
     "supertest": "^7.2.2",
     "tsx": "^4.23.12",
     "typescript": "^7.0.2",
@@ -146,17 +153,20 @@
       "electron/**/*",
       "dist-electron/**/*",
       "package.json",
-      "build/**/*"
+      "build/**/*",
+      "!build/internal-signing*"
     ],
     "extraResources": [
       {
-        "from": "legacy",
-        "to": "legacy"
+        "from": "legacy/dental.sqlite",
+        "to": "legacy/dental.sqlite"
+      },
+      {
+        "from": "legacy/schema/legacy-schema.generated.sql",
+        "to": "legacy/schema/legacy-schema.generated.sql"
       }
     ],
-    "asarUnpack": [
-      "build/internal-signing.pfx.cer"
-    ],
+    "asarUnpack": [],
     "win": {
       "verifyUpdateCodeSignature": true,
       "icon": "build/icon.ico",

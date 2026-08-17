@@ -21,6 +21,9 @@ export default {
     'src/server/application/service-modules/commission.ts',
     'src/server/application/service-modules/wechat-reminder.ts',
     'src/server/application/service-modules/shift-template.ts',
+    // 扩面第二步（2026-08-17）：纳入 keyset 分页工具与批次列表查询（均有独立 spec）。
+    'src/server/infrastructure/keyset.ts',
+    'src/server/application/service-modules/inventory-batch-list.ts',
   ],
   testFiles: [
     'src/server/http/pagination.property.spec.ts',
@@ -38,6 +41,8 @@ export default {
     'src/server/application/service-modules/commission.spec.ts',
     'src/server/application/service-modules/wechat-reminder.spec.ts',
     'src/server/application/service-modules/shift-template.spec.ts',
+    'src/server/infrastructure/keyset.spec.ts',
+    'src/server/application/service-modules/inventory-batch.spec.ts',
   ],
   reporters: ['clear-text', 'json'],
   coverageAnalysis: 'perTest',

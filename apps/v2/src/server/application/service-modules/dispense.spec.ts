@@ -610,6 +610,39 @@ describe('DispenseService', () => {
       expect(() => service().list(context, { status: 'BOGUS' })).toThrow(ValidationError);
     });
 
+    it('paginates with keyset cursors without overlap or gaps', async () => {
+      insertItem('keyset-item-1', 100, 0);
+      // 用未来时间戳的上下文创建，让本用例 5 行聚簇在 keyset 序顶部（共享 DB 中 id 随机散布
+      // 会导致游标需走全表才能集齐，翻页上限下不稳定）。
+      const futureContext: AppContext = { ...context, now: () => new Date(Date.parse(now) + 60_000) };
+      for (let index = 0; index < 5; index += 1) {
+        service().create({
+          number: `KEYSET-${index}`,
+          patientId: 'patient-demo-001',
+          items: [{ itemId: 'keyset-item-1', quantity: 1 }],
+        }, futureContext);
+      }
+      const pageSize = 2;
+      // 服务端恒取 pageSize+1 行（含多取行供路由生成 nextCursor）；按单号过滤本用例数据。
+      const onlyKeyset = (rows: Array<Record<string, unknown>>) =>
+        rows.filter((row) => String(row.number ?? '').startsWith('KEYSET-'));
+      const snapshot = onlyKeyset(service().list(context, { page: 1, pageSize: 500, cursor: null }));
+      expect(snapshot).toHaveLength(5);
+      const cursorOf = (row: Record<string, unknown>) => `${String(row.createdAt ?? '')}|${String(row.id ?? '')}`;
+      const walked: string[] = [];
+      let cursor: string | null = null;
+      for (let page = 1; page <= 5; page += 1) {
+        const raw = service().list(context, { page, pageSize, cursor }) as Array<Record<string, unknown>>;
+        walked.push(...onlyKeyset(raw).slice(0, pageSize).map((row) => String(row.id)));
+        if (raw.length <= pageSize) break;
+        // 游标 = 当前页最后一行（raw[pageSize-1]），而非探针行（raw[pageSize]），否则探针行会被跳过。
+        cursor = cursorOf(raw[pageSize - 1]);
+      }
+      // 5 行 → 与快照完全一致、不重不漏
+      expect(walked).toEqual(snapshot.map((row) => String(row.id)));
+      expect(new Set(walked).size).toBe(5);
+    });
+
     it('returns detail with items; missing dispense throws NotFoundError', async () => {
       const created = service().create({
         number: 'PF-301',

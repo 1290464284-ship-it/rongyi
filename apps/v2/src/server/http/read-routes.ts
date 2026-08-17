@@ -8,6 +8,7 @@ import type {
 } from '../application/services';
 import { ValidationError } from '../infrastructure/errors';
 import { tenantAnd, tenantParams } from '../infrastructure/tenant';
+import { clinicDayStartUtc, clinicDayEndUtc } from '../infrastructure/clock';
 import { buildRelationLabelJoins } from '../infrastructure/repository';
 import { maskPhoneForExport } from '../application/service-modules/operations';
 import { resourceRegistry } from '../../domain/resources';
@@ -147,8 +148,11 @@ export function registerReadRoutes(app: Express, deps: ReadRouteDependencies): v
       if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
         throw new ValidationError('date must be YYYY-MM-DD');
       }
-      const start = new Date(`${date}T00:00:00+08:00`).toISOString();
-      const end = new Date(`${date}T23:59:59.999+08:00`).toISOString();
+      const start = clinicDayStartUtc(date);
+      const end = clinicDayEndUtc(date);
+      if (start === null || end === null) {
+        throw new ValidationError('date must be a valid YYYY-MM-DD');
+      }
       // 与通用 list 一致：relation 字段 LEFT JOIN 取 labelField（白名单元数据），供看板显示姓名而非 UUID。
       const labelJoins = buildRelationLabelJoins(resourceRegistry.get('appointments')!);
       const labelSelect = labelJoins.length > 0 ? `, ${labelJoins.map((join) => join.select).join(', ')}` : '';

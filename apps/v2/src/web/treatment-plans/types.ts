@@ -50,6 +50,8 @@ export interface TreatmentPlanForm {
   name: string;
   status: string;
   totalFee: string;
+  /** 用户在编辑框手动改过总价（S-3 一致性护栏：手动议价需显式确认）。 */
+  totalFeeConfirmed?: boolean;
   remark: string;
   items: PlanItemForm[];
 }
@@ -81,12 +83,4 @@ export const PLAN_DISCOUNT_LABELS: Record<string, string> = {
   NONE: '无折扣',
   WHOLE: '整单折',
   DOUBLE: '折上折',
-};
-
-export const FOLLOW_UP_LABELS: Record<string, string> = {
-  NONE: '无',
-  PENDING: '待回访',
-  HORIZONTAL_SHOULD: '横向应访',
-  HORIZONTAL_DONE: '横向已访',
-  LOST: '流失',
 };

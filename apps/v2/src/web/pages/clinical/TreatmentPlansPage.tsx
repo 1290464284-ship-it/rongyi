@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { apiRequest, fetchAllPages } from '../../lib/api';
 import { CrudPage } from '../../components/CrudPage';
 import { Dialog, type DataTableColumn } from '../../components';
-import { formatMoney, toCents } from '../../lib/format';
+import { formatMoney, toCents, centsToYuanString } from '../../lib/format';
 import { errorMessage } from '../../lib/messages';
 import { useToast, type ToastKind } from '../../lib/toast-context';
 import { PlanBillingDialog } from '../../treatment-plans/PlanBillingDialog';
@@ -11,12 +11,12 @@ import { PrintPreview } from '../../treatment-plans/PrintPreview';
 import { SignForm } from '../../treatment-plans/SignForm';
 import { PlanFollowUpDialog } from '../../treatment-plans/PlanFollowUpDialog';
 import {
-  FOLLOW_UP_LABELS,
   PLAN_DISCOUNT_LABELS,
   type PlanRow,
   type TreatmentPlanForm,
   type TreatmentPlanPrintResult,
 } from '../../treatment-plans/types';
+import { FOLLOW_UP_STATUS_LABELS, CLINICAL_STATUS_LABELS } from '../../lib/labels';
 import { buildValidItems, cleanupOrphanPlan, emptyPlanForm, newItem, updatePlanWithItems } from '../../treatment-plans/plan-utils';
 
 const planColumns: DataTableColumn<PlanRow>[] = [
@@ -24,7 +24,14 @@ const planColumns: DataTableColumn<PlanRow>[] = [
   { key: 'patientId', label: '患者', render: (row) => row.patientIdLabel ?? row.patientId ?? '' },
   { key: 'doctorId', label: '医生', render: (row) => row.doctorIdLabel ?? row.doctorId ?? '' },
   { key: 'totalFee', label: '总费用', render: (row) => formatMoney(row.totalFee) },
-  { key: 'status', label: '状态' },
+  {
+    key: 'status',
+    label: '状态',
+    render: (row) => {
+      const value = String(row.status ?? '');
+      return CLINICAL_STATUS_LABELS[value] ?? value;
+    },
+  },
   { key: 'printCount', label: '打印次数', render: (row) => String(row.printCount ?? 0) },
   { key: 'signedAt', label: '签字', render: (row) => (row.signedAt ? '已签' : '未签') },
   {
@@ -41,8 +48,10 @@ const planColumns: DataTableColumn<PlanRow>[] = [
     label: '回访',
     render: (row) => {
       const rawStatus = String(row.followUpStatus ?? 'NONE');
-      const label = FOLLOW_UP_LABELS[rawStatus] ?? rawStatus;
-      return row.nextFollowUpAt ? `${label}（${String(row.nextFollowUpAt)}）` : label;
+      const label = FOLLOW_UP_STATUS_LABELS[rawStatus] ?? rawStatus;
+      // 列表列只展示日期部分（避免裸渲 ISO 时间戳）
+      const dateOnly = String(row.nextFollowUpAt ?? '').slice(0, 10);
+      return row.nextFollowUpAt ? `${label}（${dateOnly}）` : label;
     },
   },
 ];
@@ -66,6 +75,7 @@ export function TreatmentPlansPage() {
         emptyMessage="暂无治疗计划"
         queryKey={['treatment-plans']}
         endpoint="/resources/treatmentPlans"
+        paged
         initialForm={() => {
           editingIdRef.current = null;
           itemsLoadedRef.current = false;
@@ -79,7 +89,8 @@ export function TreatmentPlansPage() {
             doctorId: String(row.doctorId ?? ''),
             name: String(row.name ?? ''),
             status: String(row.status ?? 'APPROVED'),
-            totalFee: row.totalFee === null || row.totalFee === undefined ? '' : (Number(row.totalFee) / 100).toFixed(2),
+            totalFee: centsToYuanString(row.totalFee),
+            totalFeeConfirmed: false,
             remark: String(row.remark ?? ''),
             // 明细行由 PlanFormFields 打开编辑时异步拉取回填（formFromRow 为同步）
             items: [newItem()],
@@ -161,12 +172,10 @@ export function TreatmentPlansPage() {
         }}
         rowActions={(row, ctx) => {
           const openBilling = () => {
-            /* v8 ignore next -- 本页列表无分页/搜索（queryKey 恒定），stale 恒为 false，守卫为防御冗余 */
             if (ctx.stale) return;
             setBillingTarget({ row, reload: ctx.reload });
           };
           const openFollowUp = () => {
-            /* v8 ignore next -- 同上 */
             if (ctx.stale) return;
             setFollowUpTarget({ row, reload: ctx.reload });
           };

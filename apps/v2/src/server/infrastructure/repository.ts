@@ -172,7 +172,6 @@ export class SqliteRepository implements IRepository<Record<string, unknown>> {
     for (const [key, value] of Object.entries(query.filters ?? {})) {
       const field = this.field(key);
       if (!field) throw new ValidationError(`Unknown filter field: ${key}`);
-/* v8 ignore next */
       if ((Array.isArray(value) || (typeof value === 'object' && value !== null)) && field.type !== 'json') {
         throw new ValidationError(`Filter value for ${key} must be a scalar`);
       }

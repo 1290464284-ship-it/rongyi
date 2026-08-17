@@ -3,6 +3,7 @@ import type Database from 'better-sqlite3';
 import { ConflictError, NotFoundError, ValidationError } from '../../infrastructure/errors';
 import { isUniqueConstraintError } from '../../infrastructure/repository';
 import { tenantAnd, tenantParams } from '../../infrastructure/tenant';
+import { keysetCondition, keysetOrder } from '../../infrastructure/keyset';
 import { assertDoctorExists } from './common';
 import type { AppContext } from '../../../domain/contracts';
 import { DispenseExecutionService } from './dispense-stock';
@@ -157,7 +158,10 @@ export class DispenseService {
     return { id, number, status: 'PENDING', items: rows.length };
   }
 
-  list(context: AppContext, filter?: { status?: string; page?: number; pageSize?: number }): Array<Record<string, unknown>> {
+  list(
+    context: AppContext,
+    filter?: { status?: string; page?: number; pageSize?: number; cursor?: string | null },
+  ): Array<Record<string, unknown>> {
     const status = typeof filter?.status === 'string' ? filter.status.trim() : '';
     if (status !== '' && !(DISPENSE_STATUSES as readonly string[]).includes(status)) {
       throw new ValidationError('发药单状态筛选无效');
@@ -177,6 +181,11 @@ export class DispenseService {
     const page = Math.max(1, pageRaw);
     const pageSize = Math.min(200, Math.max(1, pageSizeRaw));
     const offset = (page - 1) * pageSize;
+    // S-2 keyset：两模式统一按 (createdAt DESC, id DESC) 排序（id 决胜键保证等值排序下
+    // 翻页不重不漏），恒取 pageSize+1 行供路由生成 nextCursor；cursor 存在时跳过 OFFSET。
+    const keyset = { columns: [{ column: 'D.createdAt', key: 'createdAt' }], idColumn: 'D.id', direction: 'DESC' as const };
+    const cursorCondition = keysetCondition(filter?.cursor, keyset);
+    const hasCursor = cursorCondition.where !== '';
     return this.db.prepare(
       `SELECT D.id, D.number, D.patientId, P.name AS patientName, P.phone AS patientPhone,
               D.doctorId, D.pharmacistId, U.name AS pharmacistName,
@@ -186,10 +195,10 @@ export class DispenseService {
        FROM Dispense D
        LEFT JOIN Patient P ON P.id = D.patientId
        LEFT JOIN User U ON U.id = D.pharmacistId
-       WHERE D.deletedAt IS NULL${statusClause}${tenantAnd(context.clinicId, 'D.clinicId')}
-       ORDER BY D.createdAt DESC
-       LIMIT ? OFFSET ?`,
-    ).all(...params, pageSize, offset) as Array<Record<string, unknown>>;
+       WHERE D.deletedAt IS NULL${statusClause}${tenantAnd(context.clinicId, 'D.clinicId')}${cursorCondition.where}
+       ${keysetOrder(keyset)}
+       LIMIT ${pageSize + 1} OFFSET ${hasCursor ? 0 : offset}`,
+    ).all(...params, ...cursorCondition.params) as Array<Record<string, unknown>>;
   }
 
   count(context: AppContext, filter?: { status?: string }): number {

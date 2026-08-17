@@ -12,17 +12,19 @@ export const COLOR_OPTIONS = [
 export const DEFAULT_OUTLINE_COLOR = COLOR_OPTIONS[0].value;
 export const DEFAULT_LINE_COLOR = COLOR_OPTIONS[2].value;
 
+// D1：固定对比调色板引用 --chart-1..10（亮/暗双主题各自取值），
+// 与 styles.css 图表系列色同源；用户可配置的轮廓/折线色（COLOR_OPTIONS）保持十六进制数据值。
 export const COMPARE_COLORS = [
-  '#2563eb',
-  '#dc2626',
-  '#16a34a',
-  '#9333ea',
-  '#d97706',
-  '#0f766e',
-  '#db2777',
-  '#4f46e5',
-  '#65a30d',
-  '#b45309',
+  'var(--chart-1)',
+  'var(--chart-2)',
+  'var(--chart-3)',
+  'var(--chart-4)',
+  'var(--chart-5)',
+  'var(--chart-6)',
+  'var(--chart-7)',
+  'var(--chart-8)',
+  'var(--chart-9)',
+  'var(--chart-10)',
 ];
 
 export const DEFAULT_REPORT_JSON = `{

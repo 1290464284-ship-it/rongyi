@@ -161,8 +161,8 @@ export function BackupsPage() {
       label: '操作',
       render: (row) => (
         <div className="actions">
-          <button onClick={() => verify(String(row.filename))}>校验</button>
-          <button onClick={() => stageRestore(String(row.filename))}>暂存恢复</button>
+          <button disabled={busy} onClick={() => verify(String(row.filename))}>{busy ? '校验中...' : '校验'}</button>
+          <button disabled={busy} onClick={() => stageRestore(String(row.filename))}>{busy ? '暂存中...' : '暂存恢复'}</button>
         </div>
       ),
     },
@@ -172,11 +172,11 @@ export function BackupsPage() {
     <div className="page">
       <div className="page-head">
         <h1>数据备份</h1>
-        <button onClick={create}>创建备份</button>
-        <button onClick={cleanup}>清理备份（保留 30 个）</button>
+        <button disabled={busy} onClick={create}>{busy ? '创建中...' : '创建备份'}</button>
+        <button disabled={busy} onClick={cleanup}>{busy ? '清理中...' : '清理备份（保留 30 个）'}</button>
       </div>
       {comparison && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
+        <div className="backup-comparison">
           <SummaryPanel label="备份数据摘要" summary={comparison.backup} />
           <SummaryPanel label="当前数据摘要" summary={comparison.current} />
         </div>

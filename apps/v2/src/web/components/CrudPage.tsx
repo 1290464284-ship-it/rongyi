@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useCrudResource, type CrudResourceOptions } from '../hooks/use-crud-resource';
 import { ConfirmDialog, DataTable, Dialog, EmptyState, LoadingState, PageError, PagePager, SearchInput, type DataTableColumn } from '.';
 
@@ -39,6 +39,12 @@ export interface CrudPageProps<
   columns: DataTableColumn<TRow>[];
   /** 行操作内容（如状态变更下拉、收款/退款按钮）。 */
   rowActions?: (row: TRow, ctx: CrudRenderContext<TForm>) => ReactNode;
+  /**
+   * 编辑打开时的异步字段补充（如从详情接口拉取被列表掩码的完整值）。
+   * 返回的补丁合并到 formFromRow 结果之上；加载期间提交按钮禁用。
+   * 连续打开多行时，过期请求的结果会被丢弃（按 dialogEpoch 防串）。
+   */
+  onEditLoad?: (row: TRow) => Promise<Partial<TForm> | null | undefined>;
   /** 显示防抖搜索框。 */
   searchable?: boolean;
   searchPlaceholder?: string;
@@ -53,6 +59,8 @@ export interface CrudPageProps<
   deleteTitle?: string;
   /** page-head 追加按钮（导出等）。 */
   extraHeaderActions?: ReactNode;
+  /** 渲染上下文变化回调（effect 期触发，一次渲染仅一次）：供页面侧安全捕获 stale/reload，替代每行实例化捕获组件 */
+  onContextChange?: (ctx: CrudRenderContext<TForm>) => void;
   /** 必填：Dialog 内表单体（含字段控件；提交/取消按钮由 CrudPage 提供）。 */
   renderForm: (ctx: CrudRenderContext<TForm>) => ReactNode;
 }
@@ -70,15 +78,40 @@ export function CrudPage<
   });
   const isStale = crud.isStale;
   const { query, rows, searchInput, setSearch, page, setPage, showForm, editing, form, updateForm, reload } = crud;
+  const ctx: CrudRenderContext<TForm> = { form, update: updateForm, editing, stale: isStale, reload };
+  // 渲染上下文在 effect 期通知页面（一次渲染仅一次），替代行内每行实例化的捕获组件
+  useEffect(() => {
+    props.onContextChange?.(ctx);
+  });
   // Dialog key：每次打开表单递增，强制重挂载，取消动画期间再次打开时清掉迟到的关闭定时器
   const [dialogEpoch, setDialogEpoch] = useState(0);
+  const [editLoading, setEditLoading] = useState(false);
+  // 异步编辑加载的过期防护用 ref（闭包里的 dialogEpoch 是打开瞬间的旧值，不能用于比对）
+  const dialogEpochRef = useRef(0);
   function openCreate() {
     crud.openCreate();
-    setDialogEpoch((current) => current + 1);
+    dialogEpochRef.current += 1;
+    setDialogEpoch(dialogEpochRef.current);
   }
   function openEdit(row: TRow) {
     crud.openEdit(row);
-    setDialogEpoch((current) => current + 1);
+    dialogEpochRef.current += 1;
+    const epoch = dialogEpochRef.current;
+    setDialogEpoch(epoch);
+    if (!props.onEditLoad) return;
+    setEditLoading(true);
+    props.onEditLoad(row)
+      .then((patch) => {
+        // 过期响应丢弃：期间用户可能已打开另一行或关闭表单
+        if (dialogEpochRef.current !== epoch) return;
+        if (patch) updateForm(patch);
+      })
+      .catch(() => {
+        // 加载失败：表单保留列表掩码值，由页面侧提交校验（如掩码检测）兜底，防止掩码落库
+      })
+      .finally(() => {
+        if (dialogEpochRef.current === epoch) setEditLoading(false);
+      });
   }
   function closeForm() {
     crud.closeForm();
@@ -88,7 +121,6 @@ export function CrudPage<
   if (query.isLoading) return <LoadingState />;
   if (query.error) return <PageError message={(query.error as Error).message} />;
 
-  const ctx: CrudRenderContext<TForm> = { form, update: updateForm, editing, stale: isStale, reload };
   const hasRowActions = Boolean(props.rowActions) || props.canEdit || props.canDelete;
   const title = typeof props.dialogTitle === 'function'
     ? props.dialogTitle(editing)
@@ -151,8 +183,10 @@ export function CrudPage<
         <form onSubmit={crud.submit}>
           {props.renderForm(ctx)}
           <div className="modal-actions">
-            <button type="button" onClick={closeForm}>取消</button>
-            <button type="submit" disabled={crud.submitting}>{crud.submitting ? '保存中...' : '保存'}</button>
+            <button type="button" className="btn-secondary" onClick={closeForm}>取消</button>
+            <button type="submit" disabled={crud.submitting || editLoading}>
+              {editLoading ? '加载中...' : crud.submitting ? '保存中...' : '保存'}
+            </button>
           </div>
         </form>
       </Dialog>

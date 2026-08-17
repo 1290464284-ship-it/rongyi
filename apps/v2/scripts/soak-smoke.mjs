@@ -1,9 +1,10 @@
-import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import { pickFreePort } from './lib/smoke-runtime.mjs';
+import { createDrill } from './lib/drill-runtime.mjs';
 
 const require = createRequire(import.meta.url);
 const Database = require(path.resolve('node_modules/better-sqlite3'));
@@ -15,86 +16,42 @@ const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'v2-soak-smoke-'));
 const dataDir = path.join(tempRoot, 'data');
 const backupDir = path.join(dataDir, 'backups');
 const logDir = path.join(dataDir, 'logs');
-const port = 47000 + Math.floor(Math.random() * 1000);
+const port = await pickFreePort(47000, 47999);
 const adminPassword = 'SoakSmokeAdmin123!';
 const durationSeconds = Math.max(10, Number(process.env.V2_SOAK_SECONDS ?? 60));
 const targetRequestsPerSecond = Math.max(1, Number(process.env.V2_SOAK_RPS ?? 5));
 const p95LimitMs = Number(process.env.V2_SOAK_P95_LIMIT_MS ?? 2500);
 
-fs.mkdirSync(dataDir, { recursive: true });
-fs.mkdirSync(backupDir, { recursive: true });
-fs.mkdirSync(logDir, { recursive: true });
-
-const apiProcess = spawn(process.execPath, [serverScript], {
-  cwd: appRoot,
-  env: {
-    ...process.env,
-    V2_PORT: String(port),
-    V2_HOST: '127.0.0.1',
-    NODE_ENV: 'development',
-    V2_DATA_DIR: dataDir,
-    V2_BACKUP_DIR: backupDir,
-    V2_LOG_DIR: logDir,
-    V2_LEGACY_DB_PATH: legacyDb,
-    V2_LEGACY_SCHEMA_DIR: legacySchemaDir,
-    V2_JWT_SECRET: 'soak-smoke-secret-0123456789abcdef0123456789abcdef',
-    V2_BACKUP_KEY: 'soak-smoke-backup-key-0123456789abcdef',
-    V2_ADMIN_PASSWORD: adminPassword,
-  },
-  stdio: ['ignore', 'ignore', 'pipe'],
-  windowsHide: true,
+const drill = createDrill({
+  appRoot,
+  serverScript,
+  legacyDb,
+  legacySchemaDir,
+  dataDir,
+  backupDir,
+  logDir,
+  port,
+  jwtSecret: 'soak-smoke-secret-0123456789abcdef0123456789abcdef',
+  backupKey: 'soak-smoke-backup-key-0123456789abcdef',
+  adminPassword,
+  stdio: ['ignore', 'ignore', 'inherit'],
+  waitTimeoutMs: 60_000,
+  readyLabel: 'soak smoke',
 });
 
-const base = `http://127.0.0.1:${port}/api/v2`;
-
-function waitForApi(timeoutMs = 60_000) {
-  const startedAt = Date.now();
-  return new Promise((resolve, reject) => {
-    const attempt = async () => {
-      if (Date.now() - startedAt > timeoutMs) {
-        reject(new Error('API did not become ready during soak smoke'));
-        return;
-      }
-      try {
-        const response = await fetch(`${base}/health`, { signal: AbortSignal.timeout(1000) });
-        if (response.ok) {
-          resolve();
-          return;
-        }
-      } catch {
-        // retry
-      }
-      setTimeout(() => void attempt(), 500);
-    };
-    void attempt();
-  });
-}
+const { spawnApi, stopApi, waitForApi } = drill;
 
 async function request(pathname, options = {}, token = null) {
   const headers = { 'content-type': 'application/json', ...(options.headers ?? {}) };
   if (token) headers.authorization = `Bearer ${token}`;
   const startedAt = performance.now();
-  const response = await fetch(`${base}${pathname}`, { ...options, headers });
+  const response = await fetch(`${drill.base}${pathname}`, { ...options, headers });
   const body = await response.json().catch(() => null);
   const durationMs = performance.now() - startedAt;
   if (!response.ok || !body?.success) {
     throw new Error(`${options.method ?? 'GET'} ${pathname}: ${response.status} ${JSON.stringify(body)}`);
   }
   return { data: body.data, durationMs };
-}
-
-function stopApi() {
-  return new Promise((resolve) => {
-    if (!apiProcess || apiProcess.killed || apiProcess.exitCode !== null) {
-      resolve();
-      return;
-    }
-    apiProcess.once('exit', resolve);
-    apiProcess.kill();
-    setTimeout(() => {
-      if (apiProcess && apiProcess.exitCode === null) apiProcess.kill('SIGKILL');
-    }, 5000).unref();
-  });
 }
 
 const samples = [];
@@ -123,6 +80,7 @@ function sampleGrowth() {
 }
 
 try {
+  spawnApi();
   await waitForApi();
   const login = await request('/auth/login', {
     method: 'POST',

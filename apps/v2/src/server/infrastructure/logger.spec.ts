@@ -150,15 +150,17 @@ describe('Logger file rotation', () => {
     for (const suffix of ['.1', '.2', '.3', '.4']) {
       fs.writeFileSync(`${logPath}${suffix}`, suffix);
     }
+    vi.useFakeTimers();
     try {
       const logger = new Logger({ logDir: dir });
       logger.error('trigger rotation');
-      await new Promise((resolve) => setTimeout(resolve, 700));
+      await vi.advanceTimersByTimeAsync(700);
       expect(fs.existsSync(`${logPath}.5`)).toBe(true);
       expect(fs.readFileSync(`${logPath}.4`, 'utf8')).toBe('.3');
       expect(fs.readFileSync(`${logPath}.1`, 'utf8')).toBe('x'.repeat(5 * 1024 * 1024));
       expect(fs.existsSync(logPath)).toBe(true);
     } finally {
+      vi.useRealTimers();
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });

@@ -2,6 +2,9 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
+<!-- 静态错误页无内联脚本：消息与按钮经主进程 executeJavaScript（DevTools 协议，不受 CSP 约束）
+     注入且 payload 已 JSON.stringify 转义；style 内联仅为本页布局，允许 unsafe-inline。 -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'">
 <title>Dental Clinic V2 - 服务异常</title>
 <style>
   body { font-family: 'Microsoft YaHei', sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #1e1e1e; color: #eee; }

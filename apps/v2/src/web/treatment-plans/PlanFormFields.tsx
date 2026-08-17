@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { apiRequest, fetchAllPages } from '../lib/api';
-import { MissingSelectOption, SearchableSelect } from '../components';
+import { fetchAllPages } from '../lib/api';
+import { DoctorSelect, SearchableSelect } from '../components';
 import { centsToYuanString } from '../lib/format';
+import { CLINICAL_STATUS_LABELS } from '../lib/labels';
 import { errorMessage } from '../lib/messages';
 import { useToast } from '../lib/toast-context';
 import type { PlanItemForm, PlanItemRow, TreatmentPlanForm } from './types';
@@ -72,39 +72,33 @@ export function PlanFormFields({
     updateRef.current({ items: form.items.map((entry) => (entry.id === id ? { ...entry, ...patch } : entry)) });
   }
 
-  const doctors = useQuery({
-    queryKey: ['plan-doctors'],
-    queryFn: () => apiRequest<Array<Record<string, unknown>>>('/doctors'),
-  });
   return (
     <>
       <label>
         患者
         <SearchableSelect resource="patients" value={form.patientId} onChange={(id) => update({ patientId: id })} ariaLabel="患者" placeholder="选择患者" />
       </label>
-      <label>
-        医生
-        <select value={form.doctorId} onChange={(event) => update({ doctorId: event.target.value })}>
-          <option value="">选择医生</option>
-          {doctors.data?.map((row) => (
-            <option key={String(row.id)} value={String(row.id)}>{String(row.name ?? row.id)}</option>
-          ))}
-          {form.doctorId !== '' && !(doctors.data ?? []).some((row) => String(row.id) === form.doctorId) && (
-            <MissingSelectOption value={form.doctorId} />
-          )}
-        </select>
-      </label>
+      <DoctorSelect label="医生" value={form.doctorId} onChange={(id) => update({ doctorId: id })} />
       <label>
         计划名称
         <input value={form.name} onChange={(event) => update({ name: event.target.value })} />
       </label>
       <label>
         状态
-        <input value={form.status} onChange={(event) => update({ status: event.target.value })} />
+        <select value={form.status} onChange={(event) => update({ status: event.target.value })}>
+          {Object.entries(CLINICAL_STATUS_LABELS).map(([value, label]) => (
+            <option key={value} value={value}>{label}</option>
+          ))}
+        </select>
       </label>
       <label>
         总费用
-        <input type="number" min="0" value={form.totalFee} onChange={(event) => update({ totalFee: event.target.value })} />
+        <input
+          type="number"
+          min="0"
+          value={form.totalFee}
+          onChange={(event) => update({ totalFee: event.target.value, totalFeeConfirmed: true })}
+        />
       </label>
       <label>
         备注

@@ -83,8 +83,9 @@ jobs:
 
       - name: Full smoke suite
         env:
-          V2_ADMIN_PASSWORD: v2-release-smoke-admin
-          V2_BACKUP_KEY: v2-release-smoke-backup
+          # T-5：口令按 run 派生（每次运行唯一），备份密钥走 vars，不再硬编码进仓库。
+          V2_ADMIN_PASSWORD: v2-release-admin-${{ github.run_id }}
+          V2_BACKUP_KEY: ${{ vars.V2_BACKUP_KEY }}
           V2_SMOKE_USE_EXISTING_DATA: '1'
           V2_DATA_DIR: ${{ runner.temp }}/v2-release-smoke-data
           # 模拟库缺失时权限冒烟必须失败而非静默跳过

@@ -71,6 +71,14 @@ function relaunchAfterCrash(stopMarkerPath) {
   } catch {
     return false;
   }
+  try {
+    // H2：app.relaunch 与外部 supervisor 双拉起去重——relaunch 成功后写停止标记，
+    // supervisor 轮询到即放弃拉起（启动时 whenReady 会清除该标记，见 main.cjs）。
+    // 写在 relaunch 之后：relaunch 失败时不写，保留 supervisor 作为兜底拉起通道。
+    fs.writeFileSync(stopMarkerPath, String(Date.now()), 'utf8');
+  } catch {
+    // best effort
+  }
   app.exit(1);
   return true;
 }

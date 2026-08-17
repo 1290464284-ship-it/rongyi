@@ -13,6 +13,10 @@ export interface BatchRow {
 export interface BatchListData {
   batches: BatchRow[];
   expiring: BatchRow[];
+  /** W-1：page/pageSize 分页模式下回传（否则缺省）。 */
+  total?: number;
+  page?: number;
+  pageSize?: number;
 }
 
 export interface InventoryReportRow extends Record<string, unknown> {

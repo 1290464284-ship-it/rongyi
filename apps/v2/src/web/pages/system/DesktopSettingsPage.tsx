@@ -178,7 +178,7 @@ export function DesktopSettingsPage() {
 
   return (
     <div className="page">
-      <h1>桌面端设置</h1>
+      <div className="page-head"><h1>桌面端设置</h1></div>
       <div className="cards">
         <div className="card"><strong>API 端口</strong><span>{apiPort ?? '未知'}</span></div>
         <div className="card"><strong>开机自启</strong><span>{autoLaunch === null ? '未知' : autoLaunch ? '已开启' : '已关闭'}</span></div>
@@ -186,11 +186,11 @@ export function DesktopSettingsPage() {
       <div className="card"><strong>上次检查更新</strong><span>{lastCheckTime ?? '尚未检查'}</span></div>
       </div>
       <div className="inline-form">
-        <button disabled={busyAction !== null} onClick={() => void runAction('autolaunch', toggleAutoLaunch)}>切换开机自启</button>
-        <button disabled={busyAction !== null} onClick={() => void runAction('restart', restartApi)}>重启 API</button>
-        <button disabled={busyAction !== null} onClick={() => void runAction('check', checkUpdates)}>检查更新</button>
-        {updateAvailable !== null && !updateStatus.includes('下载中') && !updateStatus.includes('已下载') && <button disabled={busyAction !== null} onClick={() => void runAction('download', downloadUpdate)}>下载更新</button>}
-        {updateStatus.includes('已下载') && <button disabled={busyAction !== null} onClick={() => void runAction('install', installUpdate)}>立即重启安装</button>}
+        <button disabled={busyAction !== null} onClick={() => void runAction('autolaunch', toggleAutoLaunch)}>{busyAction === 'autolaunch' ? '切换中...' : '切换开机自启'}</button>
+        <button disabled={busyAction !== null} onClick={() => void runAction('restart', restartApi)}>{busyAction === 'restart' ? '重启中...' : '重启 API'}</button>
+        <button disabled={busyAction !== null} onClick={() => void runAction('check', checkUpdates)}>{busyAction === 'check' ? '检查中...' : '检查更新'}</button>
+        {updateAvailable !== null && !updateStatus.includes('下载中') && !updateStatus.includes('已下载') && <button disabled={busyAction !== null} onClick={() => void runAction('download', downloadUpdate)}>{busyAction === 'download' ? '下载中...' : '下载更新'}</button>}
+        {updateStatus.includes('已下载') && <button disabled={busyAction !== null} onClick={() => void runAction('install', installUpdate)}>{busyAction === 'install' ? '安装中...' : '立即重启安装'}</button>}
       </div>
       {updateStatus && <p className="info">{updateStatus}</p>}
       {updatePercent !== null && <Progress value={updatePercent} />}

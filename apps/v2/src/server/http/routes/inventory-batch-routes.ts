@@ -7,6 +7,7 @@
 import type { Express } from 'express';
 
 import { wrapAsync } from '../middleware';
+import { parsePagination } from '../pagination';
 import { InventoryBatchService } from '../../application/service-modules/inventory-batch';
 import type { RouteDependencies } from './deps';
 import { stableRequestBodyHash, withIdempotency } from '../../infrastructure/idempotency';
@@ -23,12 +24,16 @@ export function registerInventoryBatchRoutes(
     const itemId = typeof req.query.itemId === 'string' && req.query.itemId ? String(req.query.itemId) : undefined;
     const days = req.query.days !== undefined ? Number(req.query.days) : undefined;
     const limit = req.query.limit !== undefined ? Number(req.query.limit) : undefined;
+    const { page, pageSize } = parsePagination(req, { defaultPageSize: 100 });
     res.json({
       success: true,
       data: service.list(req.context!, {
         itemId,
         days: Number.isFinite(days) ? days : undefined,
         limit: Number.isFinite(limit) ? limit : undefined,
+        // W-1：前端传 page/pageSize 时走 OFFSET 分页；未传保持原 limit 语义。
+        page: req.query.page !== undefined ? page : undefined,
+        pageSize: req.query.page !== undefined ? pageSize : undefined,
       }),
     });
   }));

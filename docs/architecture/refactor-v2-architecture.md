@@ -113,9 +113,12 @@ sequenceDiagram
 apps/v2/
   src/
     domain/          Entities, enums, value objects, repository ports
-    application/     Use cases, commands, queries, service modules
-    infrastructure/  SQLite, repositories, file/backup adapters
-    http/            Express app, middleware, feature routers, DTO validation
+    server/
+      application/   Use cases, commands, queries, service modules
+      infrastructure/ SQLite, repositories, file/backup adapters
+      http/          Express app, middleware, feature routers, DTO validation
+      electron/      Electron main-process modules (watchdog, secrets, api-process)
+    shared/          Shared utilities (csv, html, log/redact)
     web/             Vite React application
 ```
 

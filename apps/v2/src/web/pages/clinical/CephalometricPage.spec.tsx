@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { CephalometricPage } from './CephalometricPage';
 import { apiRequest, fetchAllPages, getSignedFileUrl, uploadFile } from '../../lib/api';
@@ -90,7 +90,7 @@ describe('CephalometricPage', () => {
     mockData();
     vi.mocked(uploadFile).mockResolvedValue({ id: 'file-1', filename: 'file-1.png', url: '/api/v2/files/file-1.png' });
     render(<CephalometricPage />, { wrapper });
-    expect(await screen.findByText('DRAFT')).toBeDefined();
+    expect(await screen.findByText('草稿')).toBeDefined();
 
     fireEvent.click(screen.getByText('新建测量'));
     await waitFor(() => {
@@ -125,7 +125,7 @@ describe('CephalometricPage', () => {
     mockData();
     vi.mocked(uploadFile).mockResolvedValue({ id: 'file-1', filename: 'file-1.png', url: '/api/v2/files/file-1.png' });
     render(<CephalometricPage />, { wrapper });
-    await screen.findByText('DRAFT');
+    await screen.findByText('草稿');
 
     fireEvent.click(screen.getByText('新建测量'));
     await waitFor(() => {
@@ -155,7 +155,7 @@ describe('CephalometricPage', () => {
     mockData();
     vi.mocked(uploadFile).mockResolvedValue({ id: 'file-1', filename: 'file-1.png', url: '/api/v2/files/file-1.png' });
     render(<CephalometricPage />, { wrapper });
-    await screen.findByText('DRAFT');
+    await screen.findByText('草稿');
 
     fireEvent.click(screen.getByText('新建测量'));
     await waitFor(() => {
@@ -184,7 +184,7 @@ describe('CephalometricPage', () => {
   it('validates JSON input', async () => {
     mockData();
     render(<CephalometricPage />, { wrapper });
-    await screen.findByText('DRAFT');
+    await screen.findByText('草稿');
     fireEvent.click(screen.getByText('新建测量'));
     await waitFor(() => {
       expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
@@ -198,7 +198,7 @@ describe('CephalometricPage', () => {
   it('validates required patient and image fields', async () => {
     mockData();
     render(<CephalometricPage />, { wrapper });
-    await screen.findByText('DRAFT');
+    await screen.findByText('草稿');
     fireEvent.click(screen.getByText('新建测量'));
     fireEvent.click(screen.getByText('保存'));
     expect(await screen.findByText('请选择患者并上传影像或填写标记点')).toBeDefined();
@@ -208,7 +208,7 @@ describe('CephalometricPage', () => {
     mockData();
     vi.mocked(uploadFile).mockResolvedValue({ id: 'file-1', filename: 'file-1.png', url: '/api/v2/files/file-1.png' });
     render(<CephalometricPage />, { wrapper });
-    await screen.findByText('DRAFT');
+    await screen.findByText('草稿');
     fireEvent.click(screen.getByText('新建测量'));
     await waitFor(() => {
       expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
@@ -236,7 +236,7 @@ describe('CephalometricPage', () => {
     mockData();
     vi.mocked(uploadFile).mockResolvedValue({ id: 'file-1', filename: 'file-1.png', url: '/api/v2/files/file-1.png' });
     render(<CephalometricPage />, { wrapper });
-    await screen.findByText('DRAFT');
+    await screen.findByText('草稿');
     fireEvent.click(screen.getByText('新建测量'));
     await waitFor(() => {
       expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
@@ -263,7 +263,7 @@ describe('CephalometricPage', () => {
   it('loads and saves a report through the report dialog', async () => {
     mockData();
     render(<CephalometricPage />, { wrapper });
-    await screen.findByText('DRAFT');
+    await screen.findByText('草稿');
 
     fireEvent.click(screen.getByRole('button', { name: '测量报告' }));
     await waitFor(() => {
@@ -295,7 +295,7 @@ describe('CephalometricPage', () => {
   it('keeps the loaded measurements when saving without editing the JSON', async () => {
     mockData();
     render(<CephalometricPage />, { wrapper });
-    await screen.findByText('DRAFT');
+    await screen.findByText('草稿');
 
     fireEvent.click(screen.getByRole('button', { name: '测量报告' }));
     await screen.findByLabelText('报告 JSON');
@@ -319,7 +319,7 @@ describe('CephalometricPage', () => {
   it('sends a wechat message through the send dialog', async () => {
     mockData();
     render(<CephalometricPage />, { wrapper });
-    await screen.findByText('DRAFT');
+    await screen.findByText('草稿');
 
     fireEvent.click(screen.getByRole('button', { name: '发送微信' }));
     fireEvent.change(await screen.findByLabelText('手机号'), { target: { value: '13800000000' } });
@@ -338,7 +338,7 @@ describe('CephalometricPage', () => {
   it('compares outlines of multiple cases with an overlay', async () => {
     mockData();
     render(<CephalometricPage />, { wrapper });
-    await screen.findByText('DRAFT');
+    await screen.findByText('草稿');
 
     fireEvent.click(await screen.findByRole('checkbox', { name: /患者甲/ }));
     fireEvent.click(screen.getByText('开始比较'));
@@ -365,14 +365,16 @@ describe('CephalometricPage', () => {
     });
     render(<CephalometricPage />, { wrapper });
     expect(await screen.findByRole('checkbox', { name: /c-1/ })).toBeDefined();
-    fireEvent.click(screen.getByText('下一页'));
+    // 页面列表现在也带分页器：把点击限定在对比选项容器内，避免“下一页”歧义。
+    const compareControls = document.querySelector('.ceph-compare-controls') as HTMLElement;
+    fireEvent.click(within(compareControls).getByText('下一页'));
     await waitFor(() => {
       expect(apiRequest).toHaveBeenCalledWith('/resources/cephalometricCases?page=2&pageSize=50');
     });
     expect(await screen.findByRole('checkbox', { name: /c-51/ })).toBeDefined();
-    expect(screen.getByText('上一页')).toBeDefined();
+    expect(within(compareControls).getByText('上一页')).toBeDefined();
 
-    fireEvent.click(screen.getByText('上一页'));
+    fireEvent.click(within(compareControls).getByText('上一页'));
     await waitFor(() => {
       expect(apiRequest).toHaveBeenCalledWith('/resources/cephalometricCases?page=1&pageSize=50');
     });
@@ -382,7 +384,7 @@ describe('CephalometricPage', () => {
   it('edits a cephalometric case keeping the original image', async () => {
     mockData();
     render(<CephalometricPage />, { wrapper });
-    await screen.findByText('DRAFT');
+    await screen.findByText('草稿');
 
     fireEvent.click(screen.getByRole('button', { name: '编辑' }));
     await waitFor(() => {
@@ -414,7 +416,7 @@ describe('CephalometricPage', () => {
   it('deletes a cephalometric case after confirmation', async () => {
     mockData();
     render(<CephalometricPage />, { wrapper });
-    await screen.findByText('DRAFT');
+    await screen.findByText('草稿');
 
     fireEvent.click(screen.getByRole('button', { name: '删除' }));
     fireEvent.click(await screen.findByText('确认删除'));
@@ -434,7 +436,7 @@ describe('CephalometricPage', () => {
       return base?.(path, init);
     });
     render(<CephalometricPage />, { wrapper });
-    await screen.findByText('DRAFT');
+    await screen.findByText('草稿');
     fireEvent.click(screen.getByText('新建测量'));
     await waitFor(() => {
       expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
@@ -448,7 +450,7 @@ describe('CephalometricPage', () => {
     mockData();
     vi.mocked(uploadFile).mockRejectedValue(new Error(''));
     render(<CephalometricPage />, { wrapper });
-    await screen.findByText('DRAFT');
+    await screen.findByText('草稿');
     fireEvent.click(screen.getByText('新建测量'));
     await waitFor(() => {
       expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);
@@ -471,7 +473,7 @@ describe('CephalometricPage', () => {
       return base?.(path, init);
     });
     render(<CephalometricPage />, { wrapper });
-    await screen.findByText('DRAFT');
+    await screen.findByText('草稿');
 
     fireEvent.click(screen.getByRole('button', { name: '测量报告' }));
     await screen.findByLabelText('报告 JSON');
@@ -544,7 +546,7 @@ describe('CephalometricPage', () => {
   it('closes the report dialog through its own cancel button', async () => {
     mockData();
     render(<CephalometricPage />, { wrapper });
-    await screen.findByText('DRAFT');
+    await screen.findByText('草稿');
 
     fireEvent.click(screen.getByRole('button', { name: '测量报告' }));
     await screen.findByLabelText('报告 JSON');
@@ -578,7 +580,7 @@ describe('CephalometricPage', () => {
     mockData();
     vi.mocked(uploadFile).mockResolvedValue({ id: 'file-1', filename: 'file-1.png', url: '/api/v2/files/file-1.png' });
     render(<CephalometricPage />, { wrapper });
-    await screen.findByText('DRAFT');
+    await screen.findByText('草稿');
     fireEvent.click(screen.getByText('新建测量'));
     await waitFor(() => {
       expect((screen.getByLabelText('患者') as HTMLSelectElement).options.length).toBeGreaterThan(1);

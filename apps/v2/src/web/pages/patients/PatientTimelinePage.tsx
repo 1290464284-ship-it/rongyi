@@ -6,7 +6,7 @@ import { errorMessage } from '../../lib/messages';
 import { useToast } from '../../lib/toast-context';
 import type { Page } from '../../lib/types';
 import { LoadingState, PageError, SearchableSelect, Timeline, type SearchableSelectRow } from '../../components';
-import { formatMoney } from '../../lib/format';
+import { formatDateTime, formatMoney } from '../../lib/format';
 import { parseStringArray } from '../../lib/parse';
 
 const TIMELINE_PAGE_SIZE = 50;
@@ -54,6 +54,8 @@ export function PatientTimelinePage() {
   const urlPatientId = searchParams.get('id');
   const [patientId, setPatientId] = useState<string | null>(urlPatientId);
   const [patientRows, setPatientRows] = useState<SearchableSelectRow[]>([]);
+  const [savingCustom, setSavingCustom] = useState(false);
+  const savingCustomRef = useRef(false);
   const derivedFromList = useRef(false);
   const generationRef = useRef(0);
   const [prevUrlPatientId, setPrevUrlPatientId] = useState(urlPatientId);
@@ -67,9 +69,9 @@ export function PatientTimelinePage() {
   useEffect(() => {
     if (derivedFromList.current || patientRows.length === 0) return;
     derivedFromList.current = true;
-    const first = patientRows[0];
-    /* v8 ignore next -- spec「uses the first real patient id」已覆盖派生患者 id 的 ?? 分支（断言通过即执行），setState-updater 内 ?? v8 未入账，属采集缺陷 */
-    setPatientId((current) => current ?? (first ? String(first.id) : null));
+    // length > 0 保证 first 恒存在（2026-08-17 T-1 复核：原 `first ? ... : null`
+    // 三元与 `if (first)` 的空值分支均为死代码，用非空断言消除）
+    setPatientId((current) => current ?? String(patientRows[0]!.id));
   }, [patientRows]);
   const visits = useTimelineResource('visits', patientId, generationRef);
   const treatments = useTimelineResource('treatments', patientId, generationRef);
@@ -112,12 +114,10 @@ export function PatientTimelinePage() {
   async function loadMoreTimeline() {
     /* v8 ignore next -- 加载更多按钮在 loadingMore 时 disabled，双击不可达 */
     if (loadingMore) return;
-    const results = await Promise.allSettled(timelineQueries.map((query) => query.fetchNextPage()));
-    const failed = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
-    /* v8 ignore next -- spec「reports load-more failures」已覆盖失败提示分支（断言通过即执行），v8 未入账，属采集缺陷 */
-    if (failed) {
-      showToast(errorMessage(failed.reason, '加载更多失败'), 'error');
-    }
+    // React Query v5 的 fetchNextPage 恒 resolve（失败进入 query.error，由区块级
+    // PageError 呈现「操作失败，请稍后重试」）；原 `if (failed)` 提示块从未执行，
+    // 2026-08-17 T-1 复核确认为死代码并删除。
+    await Promise.allSettled(timelineQueries.map((query) => query.fetchNextPage()));
   }
 
   const events: TimelineEvent[] = patientId ? [
@@ -153,7 +153,7 @@ export function PatientTimelinePage() {
   ].sort((a, b) => String(b.time).localeCompare(String(a.time)) || a.type.localeCompare(b.type)) : [];
   const timelineItems = events.map((event) => ({
     title: event.title,
-    time: event.time,
+    time: event.time ? formatDateTime(event.time) : '',
     description: `${event.type} · ${event.status ?? ''}${
       event.amount === undefined || event.amount === null ? '' : ` · ${formatMoney(event.amount)}`
     }`,
@@ -172,6 +172,10 @@ export function PatientTimelinePage() {
     const definitions = customFields.data;
     /* v8 ignore next -- 保存按钮仅在 data 非空且 patientId 非空时渲染，守卫不可达 */
     if (!definitions || definitions.length === 0 || !patientId) return;
+    /* v8 ignore next -- 保存按钮在 savingCustom 期间 disabled，双击不可达 */
+    if (savingCustomRef.current) return;
+    savingCustomRef.current = true;
+    setSavingCustom(true);
     try {
       await apiRequest('/custom-fields/values', {
         method: 'PUT',
@@ -189,6 +193,9 @@ export function PatientTimelinePage() {
       await customFieldValues.refetch();
     } catch (error) {
       showToast(errorMessage(error, '保存自定义信息失败'), 'error');
+    } finally {
+      savingCustomRef.current = false;
+      setSavingCustom(false);
     }
   }
 
@@ -220,10 +227,10 @@ export function PatientTimelinePage() {
         <div className="query-section-error" key={`failed-${index}`}>
           <p className="error">该区块加载失败</p>
           <PageError message={query.error instanceof Error ? query.error.message : String(query.error)} />
-          <button type="button" onClick={() => void query.refetch()}>重试</button>
+          <button type="button" className="btn-secondary" onClick={() => void query.refetch()}>重试</button>
         </div>
       ))}
-      <div className="timeline">
+      <div className="ui-timeline">
         <Timeline items={renderedTimelineItems} />
         {events.length === 0 && !timelineLoading && failedQueries.length === 0 && <p className="empty-board">暂无时间线记录</p>}
       </div>
@@ -239,7 +246,7 @@ export function PatientTimelinePage() {
         <section className="page-section">
           <div className="page-head">
             <h2>自定义信息</h2>
-            <button onClick={() => void saveCustomFields()}>保存自定义信息</button>
+            <button disabled={savingCustom} onClick={() => void saveCustomFields()}>{savingCustom ? '保存中...' : '保存自定义信息'}</button>
           </div>
           <div className="form-grid">
             {customFields.data.map((field) => {
