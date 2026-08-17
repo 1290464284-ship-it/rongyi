@@ -1,21 +1,11 @@
-import { FormEvent, useEffect, useRef, useState, type ComponentType } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import {
   Bell,
-  CalendarDays,
   CircleHelp,
-  LayoutDashboard,
   LogOut,
-  Package,
   PanelLeft,
-  BarChart3,
-  Phone,
-  Receipt,
-  Settings,
-  Stethoscope,
-  UserCog,
-  Users,
 } from 'lucide-react';
 import { Logo } from './Logo';
 import { logout, onSessionExpired, switchClinic } from '../lib/api';
@@ -27,65 +17,8 @@ import { GlobalSearchForm } from './GlobalSearchForm';
 import { BackupStatusCard } from './BackupStatusCard';
 import { HelpDialogs } from './HelpDialogs';
 import { LoadingState } from './status';
-
-interface NavItem {
-  key: string;
-  label: string;
-  to: string;
-  icon: ComponentType<{ size?: number }>;
-}
-
-const NAV_ITEMS: NavItem[] = [
-  { key: 'dashboard', label: '工作台', to: '/', icon: LayoutDashboard },
-  { key: 'frontDesk', label: '前台工作', to: '/front-desk', icon: CalendarDays },
-  { key: 'patients', label: '患者档案', to: '/patients', icon: Users },
-  { key: 'clinical', label: '临床记录', to: '/clinical', icon: Stethoscope },
-  { key: 'finance', label: '财务中心', to: '/finance', icon: Receipt },
-  { key: 'inventory', label: '库存与采购', to: '/inventory', icon: Package },
-  { key: 'analytics', label: '经营分析', to: '/analytics', icon: BarChart3 },
-  { key: 'communication', label: '随访与沟通', to: '/communication', icon: Phone },
-  { key: 'hr', label: '人事与设备', to: '/hr', icon: UserCog },
-  { key: 'system', label: '系统管理', to: '/system', icon: Settings },
-];
-
-const NAV_GROUPS: Array<{ label: string; keys: string[] }> = [
-  { label: '常用', keys: ['dashboard', 'frontDesk', 'patients', 'clinical'] },
-  { label: '运营', keys: ['finance', 'inventory', 'analytics', 'communication'] },
-  { label: '管理', keys: ['hr', 'system'] },
-];
-
-function readOnboardingDone(): boolean {
-  try {
-    return localStorage.getItem('v2-onboarding-done') === '1';
-  } catch {
-    // 隐私模式/存储被禁用时按“未完成新手引导”处理，不阻塞应用。
-    return false;
-  }
-}
-
-function markOnboardingDone(): void {
-  try {
-    localStorage.setItem('v2-onboarding-done', '1');
-  } catch {
-    // 存储不可用时忽略，不影响主流程。
-  }
-}
-
-function titleForPath(pathname: string): string {
-  const item = NAV_ITEMS.find((entry) => (entry.to === '/' ? pathname === '/' : pathname.startsWith(entry.to)));
-  return item?.label ?? '蓉易口腔诊所';
-}
-
-function backupTimeLabel(value: unknown): string {
-  if (!value) return '暂无备份时间';
-  const timestamp = Date.parse(String(value));
-  if (Number.isNaN(timestamp)) return String(value);
-  const diff = Date.now() - timestamp;
-  if (diff < 60_000) return '刚刚';
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`;
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`;
-  return `${Math.floor(diff / 86_400_000)} 天前`;
-}
+import { NAV_GROUPS, NAV_ITEMS, titleForPath, type NavItem } from './LayoutNav';
+import { backupTimeLabel, markOnboardingDone, readOnboardingDone } from './layout-utils';
 
 export function Layout() {
   const navigate = useNavigate();
