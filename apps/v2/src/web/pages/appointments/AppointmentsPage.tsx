@@ -2,17 +2,19 @@ import { FormEvent, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiRequest } from '../../lib/api';
 import type { Page } from '../../lib/types';
-import { ConfirmDialog, DataTable, Dialog, DoctorSelect, LoadingState, MissingSelectOption, PageError, SearchInput, SearchableSelect } from '../../components';
+import { ConfirmDialog, DataTable, DoctorSelect, LoadingState, PageError, SearchInput, SearchableSelect } from '../../components';
 import { errorMessage } from '../../lib/messages';
 import { toLocalInput } from '../../lib/format';
 import { useToast } from '../../lib/toast-context';
 import { useDebouncedValue } from '../../hooks/use-debounce';
-import { APPOINTMENT_TYPE_LABELS } from '../../lib/labels';
 import { parseLocalDateTime } from '../../appointments/date';
 import { appointmentColumns } from '../../appointments/columns';
 import { createInFlightGuard } from '../../lib/in-flight';
 import type { AppointmentRow, AppointmentForm, PurposeRow } from '../../appointments/types';
 import { AppointmentPurposePanel } from './AppointmentPurposePanel';
+import { AppointmentEditDialog } from './AppointmentEditDialog';
+import { AppointmentPurposeSelect, AppointmentTypeSelect } from './appointments-fields';
+import { emptyEditForm } from './appointments-constants';
 
 const transitionGuard = createInFlightGuard();
 
@@ -36,17 +38,7 @@ export function AppointmentsPage({ initialSearch }: { initialSearch?: string } =
   // 编辑回填用原始电话缓存（列表行可能被服务端掩码，详情接口返回原始值）
   const [rawPhoneCache, setRawPhoneCache] = useState<Record<string, string>>({});
   const editingPhoneFetchRef = useRef(0);
-  const [editForm, setEditForm] = useState<AppointmentForm>({
-    patientId: '',
-    doctorId: '',
-    chairId: '',
-    type: 'REGULAR',
-    purpose: '',
-    tempPatientName: '',
-    tempPatientPhone: '',
-    startTime: '',
-    endTime: '',
-  });
+  const [editForm, setEditForm] = useState<AppointmentForm>(emptyEditForm);
   const [deleteTarget, setDeleteTarget] = useState<AppointmentRow | null>(null);
 
   const purposes = useQuery({
@@ -263,18 +255,8 @@ export function AppointmentsPage({ initialSearch }: { initialSearch?: string } =
         <SearchableSelect resource="patients" value={patientId} onChange={setPatientId} ariaLabel="患者" placeholder="选择患者" />
         <DoctorSelect ariaLabel="医生" value={doctorId} onChange={setDoctorId} />
         <SearchableSelect resource="chairs" value={chairId} onChange={setChairId} ariaLabel="椅位" placeholder="不指定椅位" />
-        <select aria-label="预约类型" value={type} onChange={(event) => setType(event.target.value)}>
-          {Object.entries(APPOINTMENT_TYPE_LABELS).map(([value, label]) => (
-            <option key={value} value={value}>{label}</option>
-          ))}
-        </select>
-        <select aria-label="预约事项" value={purpose} onChange={(event) => setPurpose(event.target.value)}>
-          <option value="">不指定</option>
-          {purposes.data?.items?.map((row) => (
-            <option key={row.id} value={row.id}>{String(row.name ?? row.id)}</option>
-          ))}
-          {purposeMissing(purpose) && <MissingSelectOption value={purpose} />}
-        </select>
+        <AppointmentTypeSelect value={type} onChange={setType} />
+        <AppointmentPurposeSelect value={purpose} onChange={setPurpose} items={purposes.data?.items} missing={purposeMissing} />
         <input aria-label="临时患者姓名" type="text" value={tempPatientName} onChange={(event) => setTempPatientName(event.target.value)} placeholder="临时患者姓名" />
         <input aria-label="临时患者电话" type="text" value={tempPatientPhone} onChange={(event) => setTempPatientPhone(event.target.value)} placeholder="临时患者电话" />
         <input aria-label="开始时间" type="datetime-local" value={startTime} onChange={(event) => setStartTime(event.target.value)} />
@@ -289,33 +271,17 @@ export function AppointmentsPage({ initialSearch }: { initialSearch?: string } =
         <button disabled={stale || !query.data || page * 20 >= query.data.total} onClick={() => setPage((value) => value + 1)}>下一页</button>
       </div>
 
-      <Dialog open={editingAppointment !== null} title="编辑预约" onClose={closeEditAppointment}>
-        <form onSubmit={saveEditAppointment}>
-          <SearchableSelect resource="patients" value={editForm.patientId} onChange={(value) => setEditForm((current) => ({ ...current, patientId: value }))} ariaLabel="患者" placeholder="选择患者（预约患者）" />
-          <DoctorSelect ariaLabel="医生" value={editForm.doctorId} onChange={(id) => setEditForm((current) => ({ ...current, doctorId: id }))} />
-          <SearchableSelect resource="chairs" value={editForm.chairId} onChange={(value) => setEditForm((current) => ({ ...current, chairId: value }))} ariaLabel="椅位" placeholder="不指定椅位" />
-          <select aria-label="预约类型" value={editForm.type} onChange={(event) => setEditForm((current) => ({ ...current, type: event.target.value }))}>
-            {Object.entries(APPOINTMENT_TYPE_LABELS).map(([value, label]) => (
-              <option key={value} value={value}>{label}</option>
-            ))}
-          </select>
-          <select aria-label="预约事项" value={editForm.purpose} onChange={(event) => setEditForm((current) => ({ ...current, purpose: event.target.value }))}>
-            <option value="">不指定</option>
-            {purposes.data?.items?.map((row) => (
-              <option key={row.id} value={row.id}>{String(row.name ?? row.id)}</option>
-            ))}
-            {purposeMissing(editForm.purpose) && <MissingSelectOption value={editForm.purpose} />}
-          </select>
-          <input aria-label="临时患者姓名" type="text" value={editForm.tempPatientName} onChange={(event) => setEditForm((current) => ({ ...current, tempPatientName: event.target.value }))} placeholder="临时患者姓名" />
-          <input aria-label="临时患者电话" type="text" value={editForm.tempPatientPhone} onChange={(event) => setEditForm((current) => ({ ...current, tempPatientPhone: event.target.value }))} placeholder="临时患者电话" />
-          <input aria-label="开始时间" type="datetime-local" value={editForm.startTime} onChange={(event) => setEditForm((current) => ({ ...current, startTime: event.target.value }))} />
-          <input aria-label="结束时间" type="datetime-local" value={editForm.endTime} onChange={(event) => setEditForm((current) => ({ ...current, endTime: event.target.value }))} />
-          <div className="modal-actions">
-            <button type="button" onClick={closeEditAppointment}>取消</button>
-            <button type="submit" disabled={submitting || stale}>{submitting ? '保存中...' : '保存'}</button>
-          </div>
-        </form>
-      </Dialog>
+      <AppointmentEditDialog
+        open={editingAppointment !== null}
+        form={editForm}
+        setForm={setEditForm}
+        purposeItems={purposes.data?.items}
+        purposeMissing={purposeMissing}
+        submitting={submitting}
+        stale={stale}
+        onClose={closeEditAppointment}
+        onSubmit={saveEditAppointment}
+      />
 
       <ConfirmDialog
         open={deleteTarget !== null}

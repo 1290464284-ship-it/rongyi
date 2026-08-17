@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { apiRequest, downloadCsvPath } from '../../lib/api';
-import { DataTable, LoadingState, PageError, PromptDialog, type DataTableColumn } from '../../components';
+import { DataTable, LoadingState, PageError, PromptDialog } from '../../components';
 import { errorMessage } from '../../lib/messages';
 import { useAsyncAction } from '../../hooks/use-async-action';
 import { useToast } from '../../lib/toast-context';
@@ -10,6 +10,9 @@ import type { Page } from '../../lib/types';
 import { FollowUpDictsTab } from '../../follow-ups/FollowUpDictsTab';
 import { DEFAULT_EXECUTION_FORM, type CompletionTarget, type ExecutionFormState, type FollowUpNps } from '../../follow-ups/types';
 import { FollowUpExecutionDialog } from './FollowUpExecutionDialog';
+import { followUpColumns } from './followups-columns';
+import { FollowUpStats } from './FollowUpStats';
+import { FollowUpTabs } from './FollowUpTabs';
 
 export function FollowUpsPage() {
   const { showToast } = useToast();
@@ -166,42 +169,14 @@ export function FollowUpsPage() {
     }
   }
 
-  const columns: DataTableColumn<Record<string, unknown>>[] = [
-    {
-      key: 'selected',
-      label: '选择',
-      render: (row) => (
-        <input
-          type="checkbox"
-          aria-label={`选择 ${String(row.id)}`}
-          disabled={query.isFetching || stale}
-          checked={selectedIds.includes(String(row.id))}
-          onChange={(event) => {
-            const id = String(row.id);
-            setSelectedIds((current) => event.target.checked ? [...current, id] : current.filter((item) => item !== id));
-          }}
-        />
-      ),
-    },
-    {
-      key: 'patient',
-      label: '患者',
-      render: (row) => String(row.patientName ?? row.patientId ?? ''),
-    },
-    { key: 'planDate', label: '计划日期', render: (row) => String(row.planDate ?? '') },
-    { key: 'status', label: '状态', render: (row) => String(row.status ?? '') },
-    { key: 'content', label: '内容', render: (row) => String(row.content ?? '') },
-    {
-      key: 'actions',
-      label: '操作',
-      render: (row) => (
-        <span>
-          <button disabled={stale} onClick={() => setCompletion({ kind: 'single', id: String(row.id) })}>完成随访</button>
-          <button disabled={stale} onClick={() => openExecution(String(row.id))}>执行随访</button>
-        </span>
-      ),
-    },
-  ];
+  const columns = followUpColumns({
+    selectedIds,
+    disabled: query.isFetching,
+    stale,
+    onToggleSelect: (id, checked) => setSelectedIds((current) => (checked ? [...current, id] : current.filter((item) => item !== id))),
+    onComplete: (row) => setCompletion({ kind: 'single', id: String(row.id) }),
+    onExecute: (id) => openExecution(id),
+  });
 
   return (
     <div className="page">
@@ -217,67 +192,14 @@ export function FollowUpsPage() {
           </>
         )}
       </div>
-      <div className="tabs" role="tablist">
-        <button
-          id="followup-tab-list"
-          role="tab"
-          aria-selected={activeTab === 'list'}
-          aria-controls="followup-panel-list"
-          tabIndex={activeTab === 'list' ? 0 : -1}
-          className={activeTab === 'list' ? 'tab active' : 'tab'}
-          onClick={() => setActiveTab('list')}
-          onKeyDown={(event) => {
-            if (event.key === 'ArrowRight') {
-              event.preventDefault();
-              setActiveTab('dicts');
-              document.getElementById('followup-tab-dicts')?.focus();
-            }
-          }}
-        >
-          回访列表
-        </button>
-        <button
-          id="followup-tab-dicts"
-          role="tab"
-          aria-selected={activeTab === 'dicts'}
-          aria-controls="followup-panel-dicts"
-          tabIndex={activeTab === 'dicts' ? 0 : -1}
-          className={activeTab === 'dicts' ? 'tab active' : 'tab'}
-          onClick={() => setActiveTab('dicts')}
-          onKeyDown={(event) => {
-            if (event.key === 'ArrowLeft') {
-              event.preventDefault();
-              setActiveTab('list');
-              document.getElementById('followup-tab-list')?.focus();
-            }
-          }}
-        >
-          词典管理
-        </button>
-      </div>
+      <FollowUpTabs activeTab={activeTab} onSelect={setActiveTab} />
       {activeTab === 'dicts' ? (
         <div id="followup-panel-dicts" className="tab-panel" role="tabpanel" aria-labelledby="followup-tab-dicts">
           <FollowUpDictsTab />
         </div>
       ) : (
         <div id="followup-panel-list" role="tabpanel" aria-labelledby="followup-tab-list">
-          {summary.data && (
-            <div className="stat-row">
-              <span>总计：{summary.data.total}</span>
-              <span>已逾期：{summary.data.overdue}</span>
-              <span>今日：{summary.data.today}</span>
-              <span>后续：{summary.data.upcoming}</span>
-            </div>
-          )}
-          {nps.data && (
-            <div className="stat-row">
-              <span>NPS 得分：{nps.data.nps}</span>
-              <span>推荐者：{nps.data.promoters}</span>
-              <span>中立者：{nps.data.passives}</span>
-              <span>贬损者：{nps.data.detractors}</span>
-              <span>平均评分：{nps.data.average}</span>
-            </div>
-          )}
+          <FollowUpStats summary={summary.data} nps={nps.data} />
           {!Array.isArray(query.data) && query.data?.truncated ? (
             <p className="reminder-muted">
               随访提醒超过 {query.data.pageSize} 条，仅显示前 {query.data.items.length} 条
